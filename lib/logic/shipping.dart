@@ -42,9 +42,10 @@ class ShippingRules {
   });
 
   static const defaultTiers = [
+    // Ganancia ≈ $25 por pieza: 3 piezas ($75) cubren ida y vuelta de hasta ~13 km.
     ShippingTier(1, 1.0),
-    ShippingTier(3, 0.5),
-    ShippingTier(6, 0.0),
+    ShippingTier(2, 0.5),
+    ShippingTier(3, 0.0),
   ];
 
   /// Fracción que paga el cliente para un pedido con [pieces] piezas.

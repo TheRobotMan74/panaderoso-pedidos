@@ -29,10 +29,8 @@ void main() {
       // piezas → [3 km, 8 km, 15 km]
       const expected = {
         1: [10, 25, 45],
-        2: [10, 25, 45],
-        3: [5, 15, 25],
-        5: [5, 15, 25],
-        6: [0, 0, 0],
+        2: [5, 15, 25],
+        3: [0, 0, 0],
         20: [0, 0, 0],
       };
       expected.forEach((pieces, fees) {
@@ -48,8 +46,8 @@ void main() {
       expect(const ShippingRules().feeFor(km: 15, pieces: 1), 0);
     });
 
-    test('envío gratis desde 6 piezas', () {
-      expect(rules.freeFromPieces(), 6);
+    test('envío gratis desde 3 piezas', () {
+      expect(rules.freeFromPieces(), 3);
     });
 
     test('se guarda y se lee igual', () {

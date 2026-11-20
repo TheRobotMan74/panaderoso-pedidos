@@ -60,7 +60,7 @@ Las reglas de seguridad están en `firestore.rules` y `storage.rules`.
 ## Costo de envío
 
 `lib/logic/shipping.dart`: km de ida × precio por km ($2.80, gasolina del Aveo) × porcentaje
-según piezas (1 a 2: 100%, 3 a 5: 50%, 6 o más: gratis), redondeado a $5.
+según piezas (1: 100%, 2: 50%, 3 o más: gratis; ganancia ≈ $25 por pieza), redondeado a $5.
 En la fase 1 el envío es gratis; el cobro por distancia se conecta en la fase 2 con el mapa.
 
 ## Desarrollo
