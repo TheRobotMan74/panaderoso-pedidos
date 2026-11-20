@@ -1,0 +1,61 @@
+rules_version = '2';
+
+// Reglas de seguridad de la base de datos.
+// Roles: "cliente" (todos al crear cuenta) y "dueno" (se pone a mano en la consola).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'dueno';
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isOwner());
+      // Cada quien edita sus datos, pero nadie se puede poner rol desde la app.
+      allow create: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.keys().hasAny(['role']);
+      allow update: if signedIn() && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+    }
+
+    match /products/{id} {
+      allow read: if signedIn();
+      allow write: if isOwner();
+    }
+
+    match /deliveryDays/{date} {
+      allow read: if signedIn();
+      allow write: if isOwner();
+    }
+
+    match /config/{doc} {
+      allow read: if signedIn();
+      allow write: if isOwner();
+    }
+
+    match /orders/{id} {
+      allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isOwner());
+
+      // El cliente crea su pedido "recibido", sin marcar pagos y con un día abierto.
+      allow create: if signedIn()
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.status == 'recibido'
+        && request.resource.data.paymentVerified == false
+        && request.resource.data.cashCollected == false
+        && request.resource.data.paymentMethod in ['transferencia', 'efectivo']
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && exists(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate))
+        && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.open == true
+        && request.time < get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.orderCutoff;
+
+      // Solo el dueño cambia estados, pagos y cobros.
+      allow update, delete: if isOwner();
+    }
+  }
+}
