@@ -42,8 +42,10 @@ class ShippingRules {
   });
 
   static const defaultTiers = [
+    // 1 pieza paga el envío completo; de 2 a 5 solo una parte chica (25%);
+    // desde media docena es gratis (ganancia ≈ $25 por pieza → $150 cubren cualquier viaje).
     ShippingTier(1, 1.0),
-    ShippingTier(3, 0.5),
+    ShippingTier(2, 0.25),
     ShippingTier(6, 0.0),
   ];
 
