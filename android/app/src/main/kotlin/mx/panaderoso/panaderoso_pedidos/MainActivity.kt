@@ -1,0 +1,5 @@
+package mx.panaderoso.panaderoso_pedidos
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()

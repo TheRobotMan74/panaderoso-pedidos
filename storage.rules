@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// Reglas de seguridad de los archivos (fotos y capturas).
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isOwner() {
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', '') == 'dueno';
+    }
+
+    function isImageUnder10MB() {
+      return request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Capturas de transferencia: las sube el cliente y solo él y el dueño las ven.
+    match /payment-proofs/{uid}/{file} {
+      allow create: if request.auth != null && request.auth.uid == uid && isImageUnder10MB();
+      allow read: if request.auth != null && (request.auth.uid == uid || isOwner());
+    }
+
+    // Fotos de productos: todos las ven, solo el dueño las sube.
+    match /products/{file} {
+      allow read: if request.auth != null;
+      allow write: if isOwner() && isImageUnder10MB();
+    }
+  }
+}
