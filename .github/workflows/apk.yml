@@ -23,10 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Java 21: el lint de Android que corre en el armado usa métodos de Java 21
+      # (con Java 17 truena con NoSuchMethodError: List.removeLast).
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - uses: subosito/flutter-action@v2
         with:
