@@ -25,12 +25,12 @@ En los pull requests la APK queda en la pestaña **Actions**, como "panaderoso-a
 5. **Storage** → Comenzar.
 6. Configuración del proyecto → **Agregar app** → Android → nombre del paquete `mx.panaderoso.pedidos`.
    Descarga `google-services.json`: con sus datos se llena `lib/firebase_options.dart`.
+   (Ya hecho: el archivo está en `android/app/` y `.firebaserc` apunta al proyecto `panaderoso`.)
 7. Publicar reglas, índices y funciones desde esta carpeta:
 
    ```sh
    npm install -g firebase-tools
    firebase login
-   firebase use --add            # elegir el proyecto panaderoso
    (cd functions && npm install)
    firebase deploy
    ```
