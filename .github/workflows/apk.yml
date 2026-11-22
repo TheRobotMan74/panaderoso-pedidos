@@ -114,6 +114,9 @@ jobs:
         env:
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         run: |
+          # shorebird init necesita android/gradlew, que no se guarda en el repo:
+          # Flutter lo genera sin armar nada con --config-only.
+          flutter build apk --config-only
           shorebird init --display-name "Panaderoso"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
