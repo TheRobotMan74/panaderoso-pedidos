@@ -118,6 +118,29 @@ Las reglas de seguridad están en `firestore.rules` y `storage.rules`.
 - La llave de Google Maps va en `android/gradle.properties` como `MAPS_API_KEY`, restringida a
   `mx.panaderoso.pedidos` + la huella SHA-1 de la llave de firma y solo a "Maps SDK for Android".
 
+## Versión web para iPhone
+
+Los clientes con iPhone usan la app desde Safari: **https://panaderoso.web.app**.
+Con «Compartir → Agregar a pantalla de inicio» queda como app, con el ícono del oso, y ahí
+también les llegan los avisos (iPhone con iOS 16.4 o más nuevo).
+
+- Es la misma app de clientes (catálogo, cupos, pedido, captura de transferencia, mapa de la casa,
+  ver dónde va el pedido y avisos). El panel del dueño sigue solo en Android.
+- La acción **Web** de GitHub (`.github/workflows/web.yml`) la arma y la publica sola cada vez que
+  algo de la app entra a `main`. No hay que reinstalar nada: al abrirla ya trae lo más nuevo.
+- Lo que solo es de la web vive en `lib/web/` y `web/`. En Android todo queda igual (cada cambio
+  revisa `kIsWeb`).
+- Buscar dirección: en la web se usa OpenStreetMap (Nominatim), gratis y sin llave.
+- Datos de Firebase: los da Firebase Hosting en `/__/firebase/init.json`; no se copian al código.
+- Llaves de la web (`lib/web/web_config.dart`): mapa (Maps JavaScript API, solo sirve en
+  panaderoso.web.app) y reCAPTCHA para App Check (modo monitoreo, igual que Android).
+- La configuración de Hosting está aparte, en `hosting/`, para que `firebase deploy` en Cloud Shell
+  siga sin tocar la página.
+
+**Preparación (una sola vez, en Cloud Shell):** `bash scripts/preparar-web.sh`. Da de alta la app web,
+crea las dos llaves, deja ver las fotos y le da permiso a GitHub de publicar (sin contraseñas, solo
+desde `main`). Al final imprime las dos llaves para ponerlas en `lib/web/web_config.dart`.
+
 ## Costo de envío
 
 `lib/logic/shipping.dart`: km de ida × precio por km ($2.80, gasolina del Aveo) × porcentaje
@@ -131,4 +154,5 @@ flutter pub get
 flutter analyze
 flutter test
 flutter build apk --release
+flutter build web --release   # versión web (iPhone)
 ```

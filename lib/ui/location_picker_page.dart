@@ -1,8 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../services/web_geocoder.dart';
+import '../web/map_fallback.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -19,6 +22,7 @@ class PickedLocation {
 ///
 /// La búsqueda y la dirección escrita usan el buscador que ya trae Android
 /// (gratis); el mapa es Google Maps para Android (también sin costo).
+/// En la versión web (iPhone) se busca con OpenStreetMap, también gratis.
 class LocationPickerPage extends StatefulWidget {
   final double? lat;
   final double? lng;
@@ -40,7 +44,8 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   /// Si no hay nada mejor, se empieza viendo todo México.
   static const _mexico = CameraPosition(target: LatLng(23.6, -102.5), zoom: 4.5);
 
-  final _geocoding = Geocoding(locale: const Locale('es', 'MX'));
+  late final _geocoding = Geocoding(locale: const Locale('es', 'MX'));
+  final _webGeocoder = kIsWeb ? WebGeocoder() : null;
   final _search = TextEditingController();
   GoogleMapController? _map;
   late LatLng _center = widget.lat != null && widget.lng != null
@@ -83,6 +88,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
         ),
       );
       _moveTo(LatLng(pos.latitude, pos.longitude));
+      if (!mapsUsable) _lookupAddress();
     } catch (_) {
       if (!silent) _toast('No se pudo saber dónde estás. Busca tu calle arriba.');
     }
@@ -94,6 +100,18 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
     FocusScope.of(context).unfocus();
     setState(() => _searching = true);
     try {
+      final web = _webGeocoder;
+      if (web != null) {
+        final place = await web.search(q);
+        if (place == null) {
+          _toast('No encontramos esa dirección. Prueba con calle, número y colonia.');
+        } else {
+          _moveTo(LatLng(place.lat, place.lng));
+          // Sin mapa no hay "se detuvo el mapa": la dirección se pone aquí.
+          if (!mapsUsable) _lookupAddress();
+        }
+        return;
+      }
       final found = await _geocoding.locationFromAddress('$q, México');
       if (found.isEmpty) {
         _toast('No encontramos esa dirección. Prueba con calle, número y colonia.');
@@ -121,8 +139,13 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
     setState(() => _lookingUp = true);
     String text = '';
     try {
-      final marks = await _geocoding.placemarkFromCoordinates(at.latitude, at.longitude);
-      if (marks.isNotEmpty) text = addressFromPlacemark(marks.first);
+      final web = _webGeocoder;
+      if (web != null) {
+        text = await web.reverse(at.latitude, at.longitude);
+      } else {
+        final marks = await _geocoding.placemarkFromCoordinates(at.latitude, at.longitude);
+        if (marks.isNotEmpty) text = addressFromPlacemark(marks.first);
+      }
     } catch (_) {}
     if (!mounted || at != _center) return;
     setState(() {
@@ -143,6 +166,12 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
       appBar: AppBar(title: Text(widget.title)),
       body: Stack(
         children: [
+          if (!mapsUsable)
+            const MapFallback(
+              message: 'Escribe tu calle y número arriba, o toca el botón de ubicación '
+                  'para usar dónde estás ahorita.',
+            )
+          else
           GoogleMap(
             initialCameraPosition: _chosen ? CameraPosition(target: _center, zoom: 18) : _mexico,
             onMapCreated: (c) => _map = c,
@@ -161,6 +190,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
             },
           ),
           // Pin fijo al centro: se mueve el mapa, no el pin.
+          if (mapsUsable)
           IgnorePointer(
             child: Center(
               child: Padding(
@@ -255,7 +285,9 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                     children: [
                       AnimatedCount(
                         !_chosen
-                            ? 'Mueve el mapa hasta que el pin quede en tu casa.'
+                            ? (mapsUsable
+                                ? 'Mueve el mapa hasta que el pin quede en tu casa.'
+                                : 'Busca tu dirección arriba.')
                             : _lookingUp
                                 ? 'Buscando la dirección…'
                                 : (_address.isEmpty ? 'Punto marcado en el mapa' : _address),

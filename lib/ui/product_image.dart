@@ -27,6 +27,8 @@ class ProductImage extends StatelessWidget {
         fit: BoxFit.cover,
         // Se pide la foto al tamaño en pantalla: menos memoria en celulares sencillos.
         cacheWidth: px,
+        // Solo en la web: si el servidor de fotos no da permiso (CORS), se muestra igual.
+        webHtmlElementStrategy: WebHtmlElementStrategy.fallback,
         errorBuilder: (_, _, _) => placeholder,
         frameBuilder: (context, child, frame, sync) {
           if (sync) return child;

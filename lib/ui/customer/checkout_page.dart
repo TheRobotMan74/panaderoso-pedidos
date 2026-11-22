@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -32,7 +30,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String? _date;
   String? _slot;
   PaymentMethod _payment = PaymentMethod.transferencia;
-  File? _proof;
+  /// La captura elegida, ya leída (así sirve igual en Android y en la web del iPhone).
+  Uint8List? _proof;
+  int _proofKey = 0;
   bool _busy = false;
 
   Future<void> _pickProof() async {
@@ -41,7 +41,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       maxWidth: 1600,
       imageQuality: 80,
     );
-    if (x != null) setState(() => _proof = File(x.path));
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _proof = bytes;
+      _proofKey++;
+    });
   }
 
   Future<void> _place(DeliveryDay day) async {
@@ -444,11 +450,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: _proof == null
                 ? const SizedBox.shrink()
                 : Padding(
-                    key: ValueKey(_proof!.path),
+                    key: ValueKey(_proofKey),
                     padding: const EdgeInsets.only(bottom: 10),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.file(_proof!,
+                      child: Image.memory(_proof!,
                           height: 160, width: double.infinity, fit: BoxFit.cover, cacheHeight: 480),
                     ),
                   ),

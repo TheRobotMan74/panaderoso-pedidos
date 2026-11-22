@@ -37,6 +37,9 @@ const STATUS_TEXT = {
   cancelado: 'Tu pedido fue cancelado. Escríbenos si tienes dudas.',
 };
 
+// Dirección de la versión web (Firebase Hosting).
+const PAGINA_WEB = 'https://panaderoso.web.app';
+
 exports.avisoPedidoNuevo = onDocumentCreated('orders/{id}', async (event) => {
   const o = event.data?.data();
   if (!o) return;
@@ -105,6 +108,11 @@ async function avisarCliente(uid, title, body) {
     tokens,
     notification: { title, body },
     android: { priority: 'high', notification: { sound: 'default' } },
+    // Versión web (iPhone): el ícono del oso y, al tocar el aviso, abrir la app.
+    webpush: {
+      notification: { icon: `${PAGINA_WEB}/icons/Icon-192.png` },
+      fcmOptions: { link: `${PAGINA_WEB}/` },
+    },
   });
 
   // Quitar tokens de celulares que ya no existen.

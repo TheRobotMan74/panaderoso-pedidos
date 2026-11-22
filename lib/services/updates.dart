@@ -73,7 +73,8 @@ class Updates {
   /// La APK nueva si hay una más reciente que la instalada. Solo en la app instalada
   /// (no al programar ni en las pruebas).
   static Future<NewApk?> checkNewApk() async {
-    if (!kReleaseMode || !Platform.isAndroid) return null;
+    // La versión web (iPhone) se actualiza sola al abrirla: no hay APK que bajar.
+    if (kIsWeb || !kReleaseMode || !Platform.isAndroid) return null;
     final installed = await installedNumber();
     if (installed <= 0) return null;
     final latest = await latestPublishedNumber();

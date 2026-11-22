@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Pide tu pan de Panaderoso y te lo llevamos a tu casa.">
+  <!-- Ocupa toda la pantalla del iPhone; la app se cuida sola de la muesca y la barrita de abajo. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#FBF4E6">
+
+  <!-- iPhone: "Agregar a pantalla de inicio" la abre como app, con el ícono del oso. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Panaderoso">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>Panaderoso</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    html, body { margin: 0; height: 100%; background: #FBF4E6; }
+    /* El oso de "cargando" mientras abre la app (se va solo cuando la app ya se ve). */
+    #cargando {
+      position: fixed; inset: 0; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      background: #FBF4E6; transition: opacity .35s ease; z-index: 10;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #7A6352; font-size: 15px;
+    }
+    #cargando img { width: 112px; height: 112px; animation: flota 2.4s ease-in-out infinite; }
+    #cargando.fuera { opacity: 0; pointer-events: none; }
+    @keyframes flota { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    @media (prefers-reduced-motion: reduce) { #cargando img { animation: none; } }
+  </style>
+</head>
+<body>
+  <div id="cargando">
+    <img src="icons/oso-cargando.png" alt="">
+    <div>Horneando…</div>
+  </div>
+  <script>
+    window.addEventListener('flutter-first-frame', function () {
+      var c = document.getElementById('cargando');
+      if (!c) return;
+      c.classList.add('fuera');
+      setTimeout(function () { c.remove(); }, 400);
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
