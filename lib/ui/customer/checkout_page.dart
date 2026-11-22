@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/cart.dart';
+import '../../logic/promos.dart';
 import '../../logic/schedule.dart';
 import '../../logic/stock.dart';
 import '../../models.dart';
@@ -11,6 +12,7 @@ import '../../services/repo.dart';
 import '../format.dart';
 import '../order_placed.dart';
 import '../product_image.dart';
+import '../promo_widgets.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -38,6 +40,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Envío calculado con la configuración más reciente (el servidor lo vuelve a calcular).
   int _fee = 0;
 
+  /// Nombre del pan que se regala (para el festejo).
+  String? _giftName;
+
   Future<void> _pickProof() async {
     final x = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -61,7 +66,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         proofPath = await Repo.instance.uploadPaymentProof(widget.user.uid, _proof!);
       }
       final u = widget.user;
-      await Repo.instance.createOrder(BakeryOrder(
+      final gifts = await Repo.instance.createOrder(BakeryOrder(
         id: '',
         customerId: u.uid,
         customerName: u.name,
@@ -85,7 +90,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
         return;
       }
       // Primero el festejo (con el pedido todavía a la vista) y luego se vacía el carrito.
-      await showOrderPlaced(context);
+      await showOrderPlaced(
+        context,
+        gift: gifts > 0 && _giftName != null ? '$gifts $_giftName' : null,
+      );
       widget.cart.clear();
       if (!mounted) return;
       Navigator.pop(context, true);
@@ -115,7 +123,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
             stream: Repo.instance.products(),
             builder: (context, prodSnap) => StreamBuilder<Map<String, DayStock>>(
               stream: Repo.instance.dayStocks(fromDate: dateKey(DateTime.now())),
-              builder: (context, stockSnap) {
+              builder: (context, stockSnap) => StreamBuilder<List<BakeryOrder>>(
+                stream: Repo.instance.myOrdersAll(widget.user.uid),
+                builder: (context, ordersSnap) {
                 if (!daysSnap.hasData || !cfgSnap.hasData) {
                   return const SkeletonList(count: 3);
                 }
@@ -127,8 +137,10 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   cfgSnap.data!,
                   products: prodSnap.data ?? const [],
                   stocks: stockSnap.data ?? const {},
+                  myOrders: ordersSnap.data,
                 );
               },
+              ),
             ),
           ),
         ),
@@ -142,6 +154,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     AppConfig cfg, {
     required List<Product> products,
     required Map<String, DayStock> stocks,
+    List<BakeryOrder>? myOrders,
   }) {
     final theme = Theme.of(context);
     final cart = widget.cart;
@@ -161,6 +174,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
       pieces: cart.pieces,
     );
     final total = cart.subtotal + _fee;
+
+    // Pan gratis que le va a tocar (el servidor lo vuelve a revisar y lo pone).
+    final gift = giftProduct(cfg.promos, products);
+    _giftName = gift?.name;
+    final preview = gift == null || myOrders == null
+        ? const GiftPreview()
+        : previewGifts(rules: cfg.promos, myOrders: myOrders, paidPieces: cart.pieces);
+    final welcomeMissing = gift != null &&
+            myOrders != null &&
+            cfg.promos.welcomeEnabled &&
+            isFirstOrder(myOrders) &&
+            cart.pieces < cfg.promos.welcomeMinPieces
+        ? cfg.promos.welcomeMinPieces - cart.pieces
+        : 0;
     final freeFrom = cfg.shipping.enabled ? cfg.shipping.freeFromPieces() : null;
 
     String? hint;
@@ -203,6 +230,44 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         ),
                         Text(money(i.total), style: theme.textTheme.bodyMedium),
                       ],
+                    ),
+                  ),
+                for (final (kind, qty) in [
+                  if (preview.welcome) (giftWelcome, 1),
+                  if (preview.loyalty > 0) (giftLoyalty, preview.loyalty),
+                ])
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: Pan.salviaClara,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text('🎁', style: TextStyle(fontSize: 20)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text('$qty × ${gift!.name}', style: theme.textTheme.titleSmall),
+                        ),
+                        GiftTag(kind: kind),
+                      ],
+                    ),
+                  ),
+                if (welcomeMissing > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Con $welcomeMissing pieza${welcomeMissing == 1 ? '' : 's'} más, '
+                        'tu primer pedido lleva 1 ${gift!.name} de regalo 🎁',
+                        style: theme.textTheme.bodySmall?.copyWith(color: Pan.salvia),
+                      ),
                     ),
                   ),
                 const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: _DashedLine()),

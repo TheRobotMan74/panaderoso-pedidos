@@ -6,6 +6,7 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../product_image.dart';
+import '../promo_widgets.dart';
 import '../status_chip.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -142,7 +143,10 @@ class _OrderCard extends StatelessWidget {
                         Text(productArt(it.name).$1, style: const TextStyle(fontSize: 16)),
                         const SizedBox(width: 8),
                         Expanded(child: Text('${it.qty} × ${it.name}', style: theme.textTheme.bodyMedium)),
-                        Text(money(it.total), style: theme.textTheme.bodySmall),
+                        if (it.isGift)
+                          GiftTag(kind: it.gift, compact: true)
+                        else
+                          Text(money(it.total), style: theme.textTheme.bodySmall),
                       ],
                     ),
                   ),

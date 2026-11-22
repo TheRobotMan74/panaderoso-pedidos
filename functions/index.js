@@ -210,6 +210,64 @@ function stockLabel(productId, product) {
   return g || (product && product.name) || 'ese producto';
 }
 
+// ---------------------------------------------------------------------------
+// Promociones: tarjeta de lealtad y pan de bienvenida
+// ---------------------------------------------------------------------------
+// Igual que lib/logic/promos.dart. Aquí es donde de verdad se pone el pan gratis.
+// - Lealtad: cada `meta` piezas compradas (desde que salió la promo, sin contar
+//   pedidos cancelados) = 1 pan gratis, que va en el pedido que llega a la meta.
+// - Bienvenida: 1 pan gratis en el primer pedido de la cuenta, si lleva al menos
+//   `minimo` piezas. Uno por cuenta y uno por domicilio.
+// Los panes regalados van en `items` con precio 0 y `regalo: 'lealtad' | 'bienvenida'`,
+// así cuentan en el cupo del día y en la demanda para hornear.
+function reglasPromo(config) {
+  const p = config.promos || {};
+  const entero = (v, def, min, max) => (typeof v === 'number' && Number.isFinite(v)
+    ? Math.min(max, Math.max(min, Math.round(v))) : def);
+  return {
+    lealtad: p.loyaltyEnabled !== false,
+    meta: entero(p.loyaltyGoal, 10, 2, 100),
+    bienvenida: p.welcomeEnabled !== false,
+    minimo: entero(p.welcomeMinPieces, 2, 1, 50),
+    productoId: typeof p.giftProductId === 'string' ? p.giftProductId : '',
+  };
+}
+
+const sinAcentos = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+// El pan que se regala: el que eligió el dueño o, si no, el chocolatín.
+async function productoRegalo(db, reglas) {
+  let doc = null;
+  if (reglas.productoId) {
+    const d = await db.collection('products').doc(reglas.productoId).get();
+    if (d.exists) doc = d;
+  } else {
+    const todos = await db.collection('products').get();
+    doc = todos.docs.find((d) => sinAcentos(d.get('name')).includes('chocolat')) || null;
+  }
+  if (!doc || doc.get('available') === false) return null;
+  return { id: doc.id, data: doc.data() };
+}
+
+// Domicilio "en limpio" para comparar: sin acentos, mayúsculas ni signos.
+const direccionLimpia = (s) => sinAcentos(s).replace(/[^a-z0-9]+/g, ' ').trim();
+
+// Metros entre dos casas para considerarlas el mismo domicilio.
+const MISMO_DOMICILIO_METROS = 25;
+
+// ¿Otra cuenta ya recibió el pan de bienvenida en este domicilio?
+async function domicilioYaRegalado(db, uid, lat, lng, direccion) {
+  const limpia = direccionLimpia(direccion);
+  const otros = await db.collection('promoClientes').where('bienvenida.activa', '==', true).get();
+  return otros.docs.some((d) => {
+    if (d.id === uid) return false;
+    const b = d.get('bienvenida') || {};
+    if (limpia.length >= 8 && b.direccion === limpia) return true;
+    return lat !== null && lng !== null && typeof b.lat === 'number' && typeof b.lng === 'number'
+      && distanciaMetros(lat, lng, b.lat, b.lng) < MISMO_DOMICILIO_METROS;
+  });
+}
+
 const texto = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const numeroONull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -249,6 +307,17 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
   const orderRef = db.collection('orders').doc();
   // El envío lo calcula el servidor (lo que mande el celular no cuenta).
   const config = (await db.collection('config').doc('app').get()).data() || {};
+  const lat = numeroONull(d.lat);
+  const lng = numeroONull(d.lng);
+  const direccion = texto(d.address, 300);
+
+  // Promociones (ver arriba). Lo que se puede revisar antes de la transacción.
+  const reglas = reglasPromo(config);
+  const regalo = (reglas.lealtad || reglas.bienvenida) ? await productoRegalo(db, reglas) : null;
+  const domicilioUsado = reglas.bienvenida && regalo
+    ? await domicilioYaRegalado(db, uid, lat, lng, direccion) : false;
+  const promoRef = db.collection('promoClientes').doc(uid);
+  const regalados = { lealtad: 0, bienvenida: 0 };
 
   await db.runTransaction(async (tx) => {
     const day = await tx.get(dayRef);
@@ -265,6 +334,10 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
 
     const prods = await tx.getAll(...ids.map((id) => db.collection('products').doc(id)));
     const stock = await tx.get(stockRef);
+    // Leer la ficha del cliente dentro de la transacción hace que dos pedidos suyos
+    // al mismo tiempo vayan en fila (y no se lleven dos veces el mismo pan gratis).
+    const promo = await tx.get(promoRef);
+    const misPedidos = await tx.get(db.collection('orders').where('customerId', '==', uid));
 
     // Nombre y precio salen del catálogo, no del celular.
     const items = [];
@@ -298,19 +371,71 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
       used[key] = (used[key] || 0) + qty;
     }
 
-    const pieces = items.reduce((s, i) => s + i.qty, 0);
+    // Piezas compradas: las que pagan, cuentan para el envío y para la tarjeta.
+    const pagadas = items.reduce((s, i) => s + i.qty, 0);
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-    const shippingFee = costoEnvio(config, numeroONull(d.lat), numeroONull(d.lng), pieces);
+    const shippingFee = costoEnvio(config, lat, lng, pagadas);
+
+    // ----- Pan gratis -----
+    if (regalo) {
+      const activos = misPedidos.docs.filter((o) => o.get('status') !== 'cancelado');
+      const quiere = { bienvenida: 0, lealtad: 0 };
+      const yaTuvoBienvenida = promo.exists && promo.get('bienvenida.activa') === true;
+      if (reglas.bienvenida && activos.length === 0 && pagadas >= reglas.minimo
+        && !yaTuvoBienvenida && !domicilioUsado) {
+        quiere.bienvenida = 1;
+      }
+      if (reglas.lealtad) {
+        let piezas = pagadas;
+        let dados = 0;
+        for (const o of activos) {
+          const lp = o.get('lealtadPiezas');
+          if (typeof lp !== 'number') continue; // pedidos de antes de la promo
+          piezas += lp;
+          for (const it of o.get('items') || []) if (it.regalo === 'lealtad') dados += Number(it.qty) || 0;
+        }
+        quiere.lealtad = Math.min(10, Math.max(0, Math.floor(piezas / reglas.meta) - dados));
+      }
+      // El regalo también usa cupo. Si ya no cabe, no se pone: el de lealtad se
+      // queda guardado para el siguiente pedido.
+      const key = stockKey(regalo.id, regalo.data);
+      const limit = limits[key];
+      let cabe = typeof limit === 'number' ? Math.max(0, limit - (used[key] || 0)) : Infinity;
+      for (const tipo of ['bienvenida', 'lealtad']) {
+        const n = Math.min(quiere[tipo], cabe);
+        if (n <= 0) continue;
+        items.push({ productId: regalo.id, name: regalo.data.name || '', price: 0, qty: n, regalo: tipo });
+        used[key] = (used[key] || 0) + n;
+        cabe -= n;
+        regalados[tipo] = n;
+      }
+    }
+    const pieces = items.reduce((s, i) => s + i.qty, 0);
+
+    tx.set(promoRef, {
+      actualizado: FieldValue.serverTimestamp(),
+      ...(regalados.bienvenida ? {
+        bienvenida: {
+          activa: true,
+          orderId: orderRef.id,
+          direccion: direccionLimpia(direccion),
+          lat,
+          lng,
+          fecha: FieldValue.serverTimestamp(),
+        },
+      } : {}),
+    }, { merge: true });
 
     tx.set(stockRef, { used, updatedAt: FieldValue.serverTimestamp() });
     tx.create(orderRef, {
       customerId: uid,
       customerName: texto(d.customerName, 120),
       phone: texto(d.phone, 40),
-      address: texto(d.address, 300),
+      address: direccion,
       addressNotes: texto(d.addressNotes, 300),
       items,
       pieces,
+      lealtadPiezas: pagadas,
       subtotal,
       shippingFee,
       total: subtotal + shippingFee,
@@ -322,14 +447,30 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
       cashCollected: false,
       status: 'recibido',
       notes: texto(d.notes, 500),
-      lat: numeroONull(d.lat),
-      lng: numeroONull(d.lng),
+      lat,
+      lng,
       nearNotified: false,
       createdAt: FieldValue.serverTimestamp(),
     });
   });
 
-  return { id: orderRef.id };
+  return { id: orderRef.id, regalos: regalados };
+});
+
+// Si se cancela el pedido que traía el pan de bienvenida, el cliente lo puede
+// volver a usar en su siguiente pedido.
+exports.liberarBienvenida = onDocumentUpdated('orders/{id}', async (event) => {
+  const antes = event.data.before.data();
+  const despues = event.data.after.data();
+  if (antes.status === 'cancelado' || despues.status !== 'cancelado') return;
+  if (!(antes.items || []).some((it) => it.regalo === 'bienvenida')) return;
+  const ref = getFirestore().collection('promoClientes').doc(antes.customerId);
+  await getFirestore().runTransaction(async (tx) => {
+    const doc = await tx.get(ref);
+    if (doc.exists && doc.get('bienvenida.orderId') === event.params.id) {
+      tx.update(ref, { 'bienvenida.activa': false });
+    }
+  });
 });
 
 // Vuelve a contar los panes apartados de un día a partir de sus pedidos

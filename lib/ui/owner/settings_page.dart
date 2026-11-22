@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../logic/promos.dart';
 import '../../logic/shipping.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
@@ -45,6 +46,13 @@ class _SettingsFormState extends State<_SettingsForm> {
   late double? _baseLat = widget.initial.baseLat;
   late bool _routeReturn = widget.initial.routeReturn;
   late double? _baseLng = widget.initial.baseLng;
+  late bool _loyaltyOn = widget.initial.promos.loyaltyEnabled;
+  late final _loyaltyGoal =
+      TextEditingController(text: widget.initial.promos.loyaltyGoal.toString());
+  late bool _welcomeOn = widget.initial.promos.welcomeEnabled;
+  late final _welcomeMin =
+      TextEditingController(text: widget.initial.promos.welcomeMinPieces.toString());
+  late String _giftId = widget.initial.promos.giftProductId;
 
   Future<void> _pickBase() async {
     final picked = await Navigator.push<PickedLocation>(
@@ -88,6 +96,16 @@ class _SettingsFormState extends State<_SettingsForm> {
       baseLat: _baseLat,
       baseLng: _baseLng,
       routeReturn: _routeReturn,
+      promos: PromoRules(
+        loyaltyEnabled: _loyaltyOn,
+        loyaltyGoal: (int.tryParse(_loyaltyGoal.text.trim()) ?? widget.initial.promos.loyaltyGoal)
+            .clamp(2, 100),
+        welcomeEnabled: _welcomeOn,
+        welcomeMinPieces:
+            (int.tryParse(_welcomeMin.text.trim()) ?? widget.initial.promos.welcomeMinPieces)
+                .clamp(1, 50),
+        giftProductId: _giftId,
+      ),
     ));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guardado')));
@@ -186,6 +204,69 @@ class _SettingsFormState extends State<_SettingsForm> {
           onChanged: (v) => setState(() => _routeReturn = v),
           title: const Text('Regreso al punto de salida al terminar'),
           subtitle: const Text('La ruta se arma pensando también en el camino de vuelta'),
+        ),
+        const Divider(height: 40),
+        const SectionTitle('Promociones', padding: EdgeInsets.fromLTRB(4, 4, 4, 4)),
+        Text(
+          'El pan gratis se agrega solo al pedido y cuenta en la demanda para hornear. '
+          'Solo aplica a pedidos nuevos.',
+          style: theme.textTheme.bodySmall,
+        ),
+        StreamBuilder<List<Product>>(
+          stream: Repo.instance.products(),
+          builder: (context, snap) {
+            final products = snap.data ?? const <Product>[];
+            final auto = giftProduct(const PromoRules(), products);
+            final ids = products.map((p) => p.id).toSet();
+            return Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: DropdownButtonFormField<String>(
+                initialValue: ids.contains(_giftId) ? _giftId : '',
+                decoration: const InputDecoration(labelText: 'Pan que se regala'),
+                items: [
+                  DropdownMenuItem(
+                    value: '',
+                    child: Text(auto == null ? 'Chocolatín' : '${auto.name} (normal)'),
+                  ),
+                  for (final p in products) DropdownMenuItem(value: p.id, child: Text(p.name)),
+                ],
+                onChanged: (v) => setState(() => _giftId = v ?? ''),
+              ),
+            );
+          },
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Tarjeta de lealtad'),
+          subtitle: const Text('Cada cierto número de piezas compradas, 1 pan gratis'),
+          value: _loyaltyOn,
+          onChanged: (v) => setState(() => _loyaltyOn = v),
+        ),
+        TextField(
+          controller: _loyaltyGoal,
+          enabled: _loyaltyOn,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: '1 pan gratis cada',
+            suffixText: 'piezas',
+            helperText: 'Cuentan las piezas compradas desde que salió la promoción',
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Pan gratis en el primer pedido'),
+          subtitle: const Text('Uno por cuenta y uno por domicilio'),
+          value: _welcomeOn,
+          onChanged: (v) => setState(() => _welcomeOn = v),
+        ),
+        TextField(
+          controller: _welcomeMin,
+          enabled: _welcomeOn,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Pedido mínimo para el regalo',
+            suffixText: 'piezas',
+          ),
         ),
         const SizedBox(height: 24),
         HoneyButton(label: 'Guardar', icon: Icons.check_rounded, onPressed: _save),
