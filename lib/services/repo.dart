@@ -130,6 +130,25 @@ class Repo {
     }
   }
 
+  /// Manda un mensaje escrito por el dueño como notificación: a todos los clientes
+  /// con pedido pendiente en [date], o solo a [customerIds]. Lo valida el servidor
+  /// (solo el dueño). Regresa (a cuántos les llegó, cuántos no tienen avisos).
+  Future<(int, int)> sendOwnerMessage(String text, {String? date, List<String>? customerIds}) async {
+    try {
+      final r = await FirebaseFunctions.instance.httpsCallable('mandarMensaje').call<Map<Object?, Object?>>({
+        'mensaje': text,
+        'dia': ?date,
+        'clientes': ?customerIds,
+      });
+      return (
+        (r.data['enviados'] as num?)?.toInt() ?? 0,
+        (r.data['sinAvisos'] as num?)?.toInt() ?? 0,
+      );
+    } on FirebaseFunctionsException catch (e) {
+      throw RejectedByServer(e.message ?? 'No se pudo mandar el mensaje.');
+    }
+  }
+
   /// Guarda el orden de entrega acomodado a mano. Una lista vacía lo borra
   /// y la app vuelve a armar la ruta sola.
   Future<void> saveRouteOrder(String date, List<String> orderIds) =>

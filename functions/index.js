@@ -138,7 +138,7 @@ async function avisarCliente(uid, title, body) {
   const userRef = getFirestore().collection('users').doc(uid);
   const user = await userRef.get();
   const tokens = user.get('fcmTokens') || [];
-  if (tokens.length === 0) return;
+  if (tokens.length === 0) return false;
 
   const res = await getMessaging().sendEachForMulticast({
     tokens,
@@ -158,6 +158,8 @@ async function avisarCliente(uid, title, body) {
       || code === 'messaging/invalid-registration-token';
   });
   if (dead.length) await userRef.update({ fcmTokens: FieldValue.arrayRemove(...dead) });
+  // true = le llegó a por lo menos uno de sus celulares.
+  return res.successCount > 0;
 }
 
 // Distancia en metros, en línea recta (haversine). Igual que lib/logic/geo.dart.
@@ -605,4 +607,57 @@ exports.mandarRecuperacion = onCall({ secrets: [correoGmail, claveGmail], enforc
     throw new HttpsError('unavailable', 'No se pudo mandar el correo.');
   }
   return { ok: true };
+});
+
+// ---------------------------------------------------------------------------
+// Mensaje escrito por el dueño ("No te preocupes, ya voy en camino")
+// ---------------------------------------------------------------------------
+// El dueño escribe un mensaje en la app y le llega como notificación a:
+//   - todos los clientes con pedido pendiente en un día ({ dia: '2026-11-23' }), o
+//   - los clientes que él eligió ({ clientes: ['uid1', 'uid2'] }).
+// Solo el dueño puede mandarlos. Regresa a cuántos les llegó y cuántos no tienen
+// los avisos activados (para que les mande WhatsApp si hace falta).
+const MAX_LETRAS_MENSAJE = 300;
+const MAX_CLIENTES_MENSAJE = 200;
+
+exports.mandarMensaje = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('mandarMensaje', req);
+  if (!(await esDueno(req.auth && req.auth.uid))) {
+    throw new HttpsError('permission-denied', 'Solo el dueño puede mandar mensajes.');
+  }
+  const datos = req.data || {};
+  const texto = String(datos.mensaje || '').trim();
+  if (!texto) throw new HttpsError('invalid-argument', 'Escribe el mensaje.');
+  if (texto.length > MAX_LETRAS_MENSAJE) {
+    throw new HttpsError('invalid-argument', `El mensaje es muy largo (máximo ${MAX_LETRAS_MENSAJE} letras).`);
+  }
+
+  const db = getFirestore();
+  let clientes;
+  if (datos.dia !== undefined && datos.dia !== null) {
+    if (!DIA_RE.test(String(datos.dia))) throw new HttpsError('invalid-argument', 'Fecha no válida.');
+    const pedidos = await db.collection('orders')
+      .where('deliveryDate', '==', String(datos.dia))
+      .where('status', 'in', PENDIENTES)
+      .get();
+    clientes = pedidos.docs.map((d) => d.get('customerId'));
+  } else if (Array.isArray(datos.clientes)) {
+    clientes = datos.clientes;
+  } else {
+    throw new HttpsError('invalid-argument', 'Elige a quién mandarle el mensaje.');
+  }
+  clientes = [...new Set(clientes.filter((u) => typeof u === 'string' && u && !u.includes('/')))];
+  if (clientes.length === 0) throw new HttpsError('failed-precondition', 'No hay clientes a quién mandarle.');
+  if (clientes.length > MAX_CLIENTES_MENSAJE) {
+    throw new HttpsError('invalid-argument', `Son muchos clientes (máximo ${MAX_CLIENTES_MENSAJE}).`);
+  }
+
+  const resultados = await Promise.all(clientes.map((uid) =>
+    avisarCliente(uid, 'Panaderoso 🥐', texto).catch((e) => {
+      logger.warn('mensaje', uid, e);
+      return false;
+    })));
+  const enviados = resultados.filter(Boolean).length;
+  logger.info('mensaje del dueño', { clientes: clientes.length, enviados });
+  return { enviados, sinAvisos: clientes.length - enviados };
 });
