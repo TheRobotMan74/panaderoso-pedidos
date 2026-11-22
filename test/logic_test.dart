@@ -3,6 +3,7 @@ import 'package:panaderoso_pedidos/logic/demand.dart';
 import 'package:panaderoso_pedidos/logic/geo.dart';
 import 'package:panaderoso_pedidos/logic/schedule.dart';
 import 'package:panaderoso_pedidos/logic/shipping.dart';
+import 'package:panaderoso_pedidos/logic/stock.dart';
 import 'package:panaderoso_pedidos/models.dart';
 
 BakeryOrder _order(String date, String slot, Map<String, int> items,
@@ -152,6 +153,73 @@ void main() {
       final u = AppUser.fromMap('u', {'name': 'A', 'phone': '1', 'address': 'Calle'});
       expect(u.hasLocation, false);
       expect(AppConfig.fromMap(null).nearAlertMeters, 1000);
+    });
+  });
+
+  group('Cupo de panes', () {
+    const choco = Product(id: 'choco', name: 'Chocolatín', price: 30, stockGroup: 'Masa de croissant');
+    const jyq = Product(id: 'jyq', name: 'Croissant de jamón y queso', price: 35, stockGroup: 'masa de croissant ');
+    const pizza = Product(id: 'pizza', name: 'Croissant de pizza', price: 35, stockGroup: 'Masa de croissant');
+    const donas = Product(id: 'donas', name: 'Donas', price: 20);
+    final byId = {for (final p in [choco, jyq, pizza, donas]) p.id: p};
+    OrderItem item(Product p, int qty) => OrderItem(productId: p.id, name: p.name, price: p.price, qty: qty);
+
+    test('los de la misma masa comparten cupo y las donas van aparte', () {
+      final groups = stockGroups([choco, jyq, pizza, donas]);
+      expect(groups.length, 2);
+      expect(groups[0].key, 'g:masa de croissant');
+      expect(groups[0].label, 'Masa de croissant');
+      expect(groups[0].products.length, 3);
+      expect(groups[0].productNames, 'Chocolatín, Croissant de jamón y queso y Croissant de pizza');
+      expect(groups[1].key, 'p:donas');
+      expect(groups[1].shared, false);
+      // Un producto nuevo sin grupo tiene su propio cupo.
+      expect(stockKey(const Product(id: 'orejas', name: 'Orejas', price: 15)), 'p:orejas');
+    });
+
+    test('20 de chocolate + 5 + 5 son 30 del mismo cupo', () {
+      final need = needByGroup([item(choco, 20), item(jyq, 5), item(pizza, 5), item(donas, 3)], byId);
+      expect(need, {'g:masa de croissant': 30, 'p:donas': 3});
+    });
+
+    test('cuánto queda y cuándo ya no alcanza', () {
+      const day = DeliveryDay(
+        date: '2026-11-23',
+        open: true,
+        slots: ['08:00'],
+        stock: {'g:masa de croissant': 30, 'p:donas': 12},
+      );
+      const stock = DayStock(date: '2026-11-23', used: {'g:masa de croissant': 25, 'p:donas': 12});
+      expect(remainingFor(day, stock, 'g:masa de croissant'), 5);
+      expect(remainingFor(day, stock, 'p:donas'), 0);
+      expect(remainingFor(day, stock, 'p:otro'), isNull);
+      expect(totalRemaining(day, stock), 5);
+      expect(totalRemaining(day, null), 42);
+      expect(overLimit(day, stock, {'g:masa de croissant': 5}), isEmpty);
+      expect(overLimit(day, stock, {'g:masa de croissant': 6}), ['g:masa de croissant']);
+      expect(overLimit(day, stock, {'p:donas': 1, 'p:otro': 99}), ['p:donas']);
+      expect(remainingText(40), 'quedan 40 panes');
+      expect(remainingText(1), 'queda 1 pan');
+      expect(remainingText(0), 'agotado');
+    });
+
+    test('se lee el cupo y el pedido movido desde la base de datos', () {
+      final d = DeliveryDay.fromMap('2026-11-23', {
+        'open': true,
+        'slots': ['08:00'],
+        'stock': {'p:donas': 12.0},
+      });
+      expect(d.stock, {'p:donas': 12});
+      expect(d.toMap()['stock'], {'p:donas': 12});
+      expect(DayStock.fromMap('x', null).used, isEmpty);
+      final o = BakeryOrder.fromMap('o', {
+        'deliveryDate': '2026-11-25',
+        'slot': '09:00',
+        'movedFrom': {'date': '2026-11-23', 'slot': '08:00'},
+      });
+      expect(o.wasMoved, true);
+      expect(o.movedFromDate, '2026-11-23');
+      expect(Product.fromMap('p', {'name': 'Donas'}).stockGroup, '');
     });
   });
 }

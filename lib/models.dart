@@ -61,6 +61,10 @@ class Product {
   final bool available;
   final int sortOrder;
 
+  /// Grupo de masa con el que comparte cupo (por ejemplo "Masa de croissant").
+  /// Vacío = tiene su propio cupo.
+  final String stockGroup;
+
   const Product({
     required this.id,
     required this.name,
@@ -69,7 +73,19 @@ class Product {
     this.imageUrl,
     this.available = true,
     this.sortOrder = 0,
+    this.stockGroup = '',
   });
+
+  Product copyWith({bool? available, String? stockGroup}) => Product(
+        id: id,
+        name: name,
+        description: description,
+        price: price,
+        imageUrl: imageUrl,
+        available: available ?? this.available,
+        sortOrder: sortOrder,
+        stockGroup: stockGroup ?? this.stockGroup,
+      );
 
   factory Product.fromMap(String id, Map<String, dynamic> m) => Product(
         id: id,
@@ -79,6 +95,7 @@ class Product {
         imageUrl: m['imageUrl'] as String?,
         available: m['available'] as bool? ?? true,
         sortOrder: (m['sortOrder'] as num?)?.toInt() ?? 0,
+        stockGroup: m['stockGroup'] as String? ?? '',
       );
 
   Map<String, dynamic> toMap() => {
@@ -88,6 +105,7 @@ class Product {
         'imageUrl': imageUrl,
         'available': available,
         'sortOrder': sortOrder,
+        'stockGroup': stockGroup,
       };
 }
 
@@ -107,12 +125,17 @@ class DeliveryDay {
   /// No hay hora límite: se puede pedir hasta ese momento.
   final bool closed;
 
+  /// Cupo de panes del día por grupo de masa (ver logic/stock.dart).
+  /// Un grupo que no aparece no tiene límite.
+  final Map<String, int> stock;
+
   const DeliveryDay({
     required this.date,
     required this.open,
     required this.slots,
     this.slotMinutes = 60,
     this.closed = false,
+    this.stock = const {},
   });
 
   factory DeliveryDay.fromMap(String id, Map<String, dynamic> m) => DeliveryDay(
@@ -121,6 +144,7 @@ class DeliveryDay {
         slots: List<String>.from(m['slots'] as List? ?? const []),
         slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
         closed: m['closed'] as bool? ?? false,
+        stock: _intMap(m['stock']),
       );
 
   Map<String, dynamic> toMap() => {
@@ -128,8 +152,25 @@ class DeliveryDay {
         'slots': slots,
         'slotMinutes': slotMinutes,
         'closed': closed,
+        'stock': stock,
       };
 }
+
+/// Panes ya apartados en un día, por grupo de masa (documento dayStock/{fecha}).
+/// Solo lo escribe el servidor: sube con cada pedido y baja al cancelar o borrar.
+class DayStock {
+  final String date;
+  final Map<String, int> used;
+
+  const DayStock({required this.date, this.used = const {}});
+
+  factory DayStock.fromMap(String id, Map<String, dynamic>? m) =>
+      DayStock(date: id, used: _intMap(m?['used']));
+}
+
+Map<String, int> _intMap(Object? v) => v is Map
+    ? {for (final e in v.entries) if (e.value is num) '${e.key}': (e.value as num).toInt()}
+    : const {};
 
 enum PaymentMethod { transferencia, efectivo }
 
@@ -198,6 +239,10 @@ class BakeryOrder {
   /// Ya se le avisó al cliente que el repartidor está cerca.
   final bool nearNotified;
 
+  /// Si el dueño movió el día de entrega: de qué día y horario venía.
+  final String? movedFromDate;
+  final String? movedFromSlot;
+
   const BakeryOrder({
     required this.id,
     required this.customerId,
@@ -219,7 +264,11 @@ class BakeryOrder {
     this.lat,
     this.lng,
     this.nearNotified = false,
+    this.movedFromDate,
+    this.movedFromSlot,
   });
+
+  bool get wasMoved => movedFromDate != null;
 
   bool get hasLocation => lat != null && lng != null;
 
@@ -255,6 +304,8 @@ class BakeryOrder {
         lat: (m['lat'] as num?)?.toDouble(),
         lng: (m['lng'] as num?)?.toDouble(),
         nearNotified: m['nearNotified'] as bool? ?? false,
+        movedFromDate: (m['movedFrom'] as Map?)?['date'] as String?,
+        movedFromSlot: (m['movedFrom'] as Map?)?['slot'] as String?,
       );
 
   /// Datos que escribe el cliente al crear el pedido.

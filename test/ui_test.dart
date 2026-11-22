@@ -4,6 +4,7 @@ import 'package:panaderoso_pedidos/models.dart';
 import 'package:panaderoso_pedidos/ui/customer/customer_home.dart';
 import 'package:panaderoso_pedidos/ui/product_image.dart';
 import 'package:panaderoso_pedidos/ui/status_chip.dart';
+import 'package:panaderoso_pedidos/ui/stock_widgets.dart';
 import 'package:panaderoso_pedidos/ui/theme.dart';
 import 'package:panaderoso_pedidos/ui/widgets.dart';
 
@@ -69,5 +70,23 @@ void main() {
       await tester.pumpWidget(_app(const ProductImage(url: null, name: 'Donas', size: 80)));
       expect(find.text('🍩'), findsOneWidget);
     });
+  });
+
+  testWidgets('contador de panes en vivo', (tester) async {
+    await tester.pumpWidget(_app(const SizedBox(
+      width: 320,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StockTotal(left: 40),
+          StockMeter(label: 'Masa de croissant', left: 12, limit: 30),
+          StockMeter(label: 'Donas', left: 0, limit: 12),
+        ],
+      ),
+    )));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Quedan 40 panes disponibles'), findsOneWidget);
+    expect(find.text('quedan 12 panes de 30'), findsOneWidget);
+    expect(find.text('Agotado'), findsOneWidget);
   });
 }

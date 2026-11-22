@@ -57,16 +57,8 @@ class ProductsPage extends StatelessWidget {
                           ),
                         ),
                         Switch(
-                      value: p.available,
-                      onChanged: (v) => Repo.instance.saveProduct(Product(
-                        id: p.id,
-                        name: p.name,
-                        description: p.description,
-                        price: p.price,
-                        imageUrl: p.imageUrl,
-                        available: v,
-                            sortOrder: p.sortOrder,
-                          )),
+                          value: p.available,
+                          onChanged: (v) => Repo.instance.saveProduct(p.copyWith(available: v)),
                         ),
                       ],
                     ),
@@ -136,6 +128,7 @@ class _ProductFormState extends State<_ProductForm> {
       imageUrl: _imageUrl,
       available: widget.product?.available ?? true,
       sortOrder: widget.product?.sortOrder ?? widget.nextOrder,
+      stockGroup: widget.product?.stockGroup ?? '',
     ));
     if (mounted) Navigator.pop(context);
   }

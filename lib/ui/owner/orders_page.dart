@@ -29,7 +29,10 @@ class OrdersPage extends StatelessWidget {
             final c = a.deliveryDate.compareTo(b.deliveryDate);
             return c != 0 ? c : a.slot.compareTo(b.slot);
           });
-        if (orders.isEmpty) {
+        // Los cancelados van hasta abajo, por si el dueño los quiere borrar.
+        final cancelled = snap.data!.where((o) => o.status == OrderStatus.cancelado).toList()
+          ..sort((a, b) => a.deliveryDate.compareTo(b.deliveryDate));
+        if (orders.isEmpty && cancelled.isEmpty) {
           return const EmptyState(
             title: 'Todo tranquilo por aquí',
             message: 'No hay pedidos pendientes. Cuando llegue uno, aparece aquí al momento.',
@@ -81,6 +84,15 @@ class OrdersPage extends StatelessWidget {
             );
           }
           children.add(_OrderCard(key: ValueKey(o.id), order: o));
+        }
+        if (orders.isEmpty) {
+          children.add(const Padding(
+            padding: EdgeInsets.fromLTRB(8, 24, 8, 0),
+            child: Text('No hay pedidos pendientes.', textAlign: TextAlign.center),
+          ));
+        }
+        if (cancelled.isNotEmpty) {
+          children.add(_CancelledSection(orders: cancelled));
         }
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -157,6 +169,10 @@ class _OrderCard extends StatelessWidget {
     final o = order;
     final theme = Theme.of(context);
     final next = _next[o.status];
+    final moved = o.wasMoved
+        ? 'Movido del ${dayLabel(o.movedFromDate!)}'
+            '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!)}'}'
+        : null;
     final isCash = o.paymentMethod == PaymentMethod.efectivo;
     final (accent, _, _) = statusStyle(o.status);
     return PanCard(
@@ -188,6 +204,7 @@ class _OrderCard extends StatelessWidget {
                   if (o.addressNotes.isNotEmpty)
                     _line(Icons.sticky_note_2_outlined, o.addressNotes, theme.textTheme.bodySmall!),
                   _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: true),
+                  if (moved != null) _line(Icons.edit_calendar_rounded, moved, theme.textTheme.bodySmall!),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 6,
@@ -275,6 +292,7 @@ class _OrderCard extends StatelessWidget {
                           style: TextButton.styleFrom(foregroundColor: Pan.terracota),
                           child: const Text('Cancelar'),
                         ),
+                      _DeleteOrderButton(order: o),
                     ],
                   ),
                 ],
@@ -302,4 +320,94 @@ class _OrderCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Borrar un pedido para siempre (por ejemplo, uno de prueba).
+/// Desaparece también en el celular del cliente y libera su cupo.
+Future<void> confirmDeleteOrder(BuildContext context, BakeryOrder o) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.delete_forever_rounded, color: Pan.terracota, size: 32),
+      title: const Text('¿Eliminar este pedido?'),
+      content: Text(
+        'El pedido de ${o.customerName} (${o.pieces} '
+        '${o.pieces == 1 ? 'pieza' : 'piezas'}, ${money(o.total)}) se borra para siempre, '
+        'también del celular del cliente. Sus panes vuelven al cupo del día.\n\n'
+        'Si solo quieres avisarle que no va, mejor usa "Cancelar".',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Pan.terracota),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Sí, eliminar'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  HapticFeedback.mediumImpact();
+  try {
+    await Repo.instance.deleteOrder(o.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pedido eliminado ✓')));
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('No se pudo eliminar. Intenta de nuevo. ($e)')));
+    }
+  }
+}
+
+class _DeleteOrderButton extends StatelessWidget {
+  final BakeryOrder order;
+  const _DeleteOrderButton({required this.order});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: 'Eliminar pedido',
+        onPressed: () => confirmDeleteOrder(context, order),
+        icon: const Icon(Icons.delete_outline_rounded, color: Pan.terracota),
+      );
+}
+
+/// Pedidos cancelados, plegados al final de la lista.
+class _CancelledSection extends StatelessWidget {
+  final List<BakeryOrder> orders;
+  const _CancelledSection({required this.orders});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: PanCard(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        color: Pan.harina,
+        child: ExpansionTile(
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: const Icon(Icons.block_rounded, color: Pan.canela),
+          title: Text('Cancelados (${orders.length})', style: theme.textTheme.titleSmall),
+          subtitle: Text('Puedes eliminarlos para que ya no salgan', style: theme.textTheme.bodySmall),
+          children: [
+            for (final o in orders)
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 12),
+                title: Text(o.customerName, style: theme.textTheme.titleSmall),
+                subtitle: Text(
+                  '${capitalize(dayLabel(o.deliveryDate))} · ${o.pieces} '
+                  '${o.pieces == 1 ? 'pieza' : 'piezas'} · ${money(o.total)}',
+                  style: theme.textTheme.bodySmall,
+                ),
+                trailing: _DeleteOrderButton(order: o),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
