@@ -103,15 +103,16 @@ class DeliveryDay {
   /// Duración de cada horario en minutos.
   final int slotMinutes;
 
-  /// Hasta cuándo se puede pedir para este día.
-  final DateTime orderCutoff;
+  /// true cuando el dueño ya empezó a repartir ese día: ya no se aceptan pedidos.
+  /// No hay hora límite: se puede pedir hasta ese momento.
+  final bool closed;
 
   const DeliveryDay({
     required this.date,
     required this.open,
     required this.slots,
     this.slotMinutes = 60,
-    required this.orderCutoff,
+    this.closed = false,
   });
 
   factory DeliveryDay.fromMap(String id, Map<String, dynamic> m) => DeliveryDay(
@@ -119,14 +120,14 @@ class DeliveryDay {
         open: m['open'] as bool? ?? false,
         slots: List<String>.from(m['slots'] as List? ?? const []),
         slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
-        orderCutoff: _toDate(m['orderCutoff']) ?? DateTime(2000),
+        closed: m['closed'] as bool? ?? false,
       );
 
   Map<String, dynamic> toMap() => {
         'open': open,
         'slots': slots,
         'slotMinutes': slotMinutes,
-        'orderCutoff': orderCutoff,
+        'closed': closed,
       };
 }
 

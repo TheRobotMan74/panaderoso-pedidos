@@ -64,21 +64,30 @@ void main() {
       expect(slotLabel('08:00'), '8:00 a 9:00');
     });
 
-    test('la hora límite es el día anterior', () {
-      expect(defaultCutoff('2026-11-23', hour: 18), DateTime(2026, 11, 22, 18));
-      expect(defaultCutoff('2026-12-01'), DateTime(2026, 11, 30, 18));
-    });
-
-    test('solo se puede pedir a días abiertos antes de la hora límite', () {
-      DeliveryDay day(String date, {bool open = true}) => DeliveryDay(
+    test('se puede pedir hasta que empieza el reparto, sin hora límite', () {
+      DeliveryDay day(String date, {bool open = true, bool closed = false}) => DeliveryDay(
             date: date,
             open: open,
+            closed: closed,
             slots: const ['08:00'],
-            orderCutoff: defaultCutoff(date),
           );
-      final now = DateTime(2026, 11, 22, 19); // domingo 7 PM
-      final days = [day('2026-11-25'), day('2026-11-23'), day('2026-11-27', open: false)];
-      expect(orderableDays(days, now).map((d) => d.date), ['2026-11-25']);
+      final now = DateTime(2026, 11, 23, 9); // lunes 9 AM, ya en el día de entrega
+      final days = [
+        day('2026-11-25'),
+        day('2026-11-23'), // hoy, todavía no sale a repartir
+        day('2026-11-22'), // ayer
+        day('2026-11-27', open: false),
+        day('2026-11-30', closed: true),
+      ];
+      expect(orderableDays(days, now).map((d) => d.date), ['2026-11-23', '2026-11-25']);
+    });
+
+    test('al empezar a repartir el día se cierra', () {
+      final d = DeliveryDay.fromMap('2026-11-23', {'open': true, 'slots': ['08:00'], 'closed': true});
+      expect(orderableDays([d], DateTime(2026, 11, 23, 7)), isEmpty);
+      // Días viejos guardados con hora límite se siguen leyendo.
+      final old = DeliveryDay.fromMap('2026-11-25', {'open': true, 'slots': ['08:00'], 'orderCutoff': DateTime(2026, 11, 24, 18)});
+      expect(orderableDays([old], DateTime(2026, 11, 24, 20)).length, 1);
     });
   });
 

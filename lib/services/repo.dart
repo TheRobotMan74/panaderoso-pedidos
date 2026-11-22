@@ -64,6 +64,10 @@ class Repo {
   Future<void> saveDeliveryDay(DeliveryDay d) =>
       _db.collection('deliveryDays').doc(d.date).set(d.toMap());
 
+  /// Al empezar a repartir: ya no se aceptan pedidos para ese día.
+  Future<void> closeDeliveryDay(String date) =>
+      _db.collection('deliveryDays').doc(date).update({'closed': true});
+
   Future<void> deleteDeliveryDay(String date) =>
       _db.collection('deliveryDays').doc(date).delete();
 

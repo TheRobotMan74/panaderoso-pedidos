@@ -71,6 +71,9 @@ class DeliveryTracker extends ChangeNotifier {
     final pending = await pendingToday();
     _viewers = _viewersOf(pending);
 
+    // Desde que sale a repartir ya no se aceptan pedidos para hoy.
+    await Repo.instance.closeDeliveryDay(today).catchError((_) {});
+
     if (!resume) {
       await Repo.instance.startTracking(date: today, viewers: _viewers, alertMeters: alertMeters);
       for (final o in pending.where((o) => o.status == OrderStatus.confirmado)) {

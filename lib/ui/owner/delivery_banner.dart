@@ -50,7 +50,8 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
               'y les llegará un aviso cuando estés cerca.\n\n'
               '${confirmed > 0 ? '$confirmed pedidos confirmados pasan a "En camino".\n' : ''}'
               '${unconfirmed > 0 ? '$unconfirmed pedidos siguen sin confirmar.\n' : ''}'
-              '\nVerás una notificación fija mientras compartes. '
+              '\nSe cierran los pedidos para hoy. '
+              'Verás una notificación fija mientras compartes. '
               'Al entregar el último pedido se deja de compartir solo.',
             ),
             actions: [
