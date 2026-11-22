@@ -74,6 +74,7 @@ flutter:
 
   assets:
     - assets/images/oso.png
+    - shorebird.yaml
 
   # Letras de la app: Fraunces (títulos, cálida y redondita) y Nunito (texto).
   # Van dentro de la APK para que se vean igual aunque no haya internet.
