@@ -752,35 +752,39 @@ class _FoldedSection extends StatelessWidget {
       child: PanCard(
         padding: const EdgeInsets.symmetric(horizontal: 6),
         color: Pan.harina,
-        child: ExpansionTile(
-          // Al empezar a seleccionar se abre sola, para ver qué palomear.
-          key: ValueKey(selecting),
-          initiallyExpanded: selecting,
-          shape: const Border(),
-          collapsedShape: const Border(),
-          leading: Icon(icon, color: Pan.canela),
-          title: Text(title, style: theme.textTheme.titleSmall),
-          subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
-          children: [
-            for (final o in orders)
-              ListTile(
-                contentPadding: const EdgeInsets.only(left: 12, right: 4),
-                onTap: selecting ? () => onToggle(o.id) : null,
-                title: Text(o.customerName, style: theme.textTheme.titleSmall),
-                subtitle: Text(
-                  '${capitalize(dayLabel(o.deliveryDate))} · ${o.pieces} '
-                  '${o.pieces == 1 ? 'pieza' : 'piezas'} · ${money(o.total)}'
-                  '${o.status == OrderStatus.cancelado ? '' : ' · ${orderStatusLabels[o.status]}'}',
-                  style: theme.textTheme.bodySmall,
+        // Recorta el brillo al tocar para que no se salga de las esquinas redondas.
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(Pan.radio - 6),
+          child: ExpansionTile(
+            // Al empezar a seleccionar se abre sola, para ver qué palomear.
+            key: ValueKey(selecting),
+            initiallyExpanded: selecting,
+            shape: const Border(),
+            collapsedShape: const Border(),
+            leading: Icon(icon, color: Pan.canela),
+            title: Text(title, style: theme.textTheme.titleSmall),
+            subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
+            children: [
+              for (final o in orders)
+                ListTile(
+                  contentPadding: const EdgeInsets.only(left: 12, right: 4),
+                  onTap: selecting ? () => onToggle(o.id) : null,
+                  title: Text(o.customerName, style: theme.textTheme.titleSmall),
+                  subtitle: Text(
+                    '${capitalize(dayLabel(o.deliveryDate))} · ${o.pieces} '
+                    '${o.pieces == 1 ? 'pieza' : 'piezas'} · ${money(o.total)}'
+                    '${o.status == OrderStatus.cancelado ? '' : ' · ${orderStatusLabels[o.status]}'}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  trailing: selecting
+                      ? Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _Check(selected: selected.contains(o.id)),
+                        )
+                      : _DeleteOrderButton(order: o),
                 ),
-                trailing: selecting
-                    ? Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _Check(selected: selected.contains(o.id)),
-                      )
-                    : _DeleteOrderButton(order: o),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

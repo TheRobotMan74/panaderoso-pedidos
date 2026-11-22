@@ -415,6 +415,7 @@ class _NextDayStock extends StatelessWidget {
               for (final g in groups)
                 StockMeter(
                   label: g.label,
+                  detail: g.shared ? g.productNames : null,
                   left: remainingFor(day, stock, g.key) ?? 0,
                   limit: day.stock[g.key]!,
                 ),
