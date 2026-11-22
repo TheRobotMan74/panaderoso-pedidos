@@ -253,6 +253,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                                 : (_address.isEmpty ? 'Punto marcado en el mapa' : _address),
                         style: theme.textTheme.titleMedium,
                         alignment: Alignment.centerLeft,
+                        maxLines: 2,
                       ),
                       const SizedBox(height: 14),
                       HoneyButton(

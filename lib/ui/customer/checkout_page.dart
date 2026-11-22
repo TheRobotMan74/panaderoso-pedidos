@@ -237,6 +237,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                           FadeSlideIn(
                             index: i,
                             offset: 10,
+                            skipWhenScrolled: false,
                             child: _Pill(
                               icon: Icons.schedule_rounded,
                               label: slotLabel(s, minutes: day.slotMinutes),

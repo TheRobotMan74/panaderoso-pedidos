@@ -382,10 +382,7 @@ class _ProductCard extends StatelessWidget {
         opacity: soldOut ? 0.6 : 1,
         child: Row(
           children: [
-            Hero(
-              tag: 'producto-${product.id}',
-              child: ProductImage(url: product.imageUrl, name: product.name, size: 96, radius: 18),
-            ),
+            ProductHero(product: product, size: 96),
             const SizedBox(width: 14),
             Expanded(
               child: Column(

@@ -87,12 +87,17 @@ class FadeSlideIn extends StatefulWidget {
   final int index;
   final Duration step;
   final double offset;
+
+  /// Si la lista ya se movió (el usuario está bajando), aparece de inmediato:
+  /// así nunca hay huecos esperando a que algo aparezca.
+  final bool skipWhenScrolled;
   const FadeSlideIn({
     super.key,
     required this.child,
     this.index = 0,
     this.step = const Duration(milliseconds: 55),
     this.offset = 18,
+    this.skipWhenScrolled = true,
   });
 
   @override
@@ -109,7 +114,9 @@ class _FadeSlideInState extends State<FadeSlideIn> with SingleTickerProviderStat
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    if (Motion.off(context)) {
+    final pos = widget.skipWhenScrolled ? Scrollable.maybeOf(context)?.position : null;
+    final scrolled = pos != null && pos.hasPixels && pos.pixels > 0;
+    if (Motion.off(context) || scrolled) {
       _c.value = 1;
       return;
     }
@@ -313,7 +320,9 @@ class AnimatedCount extends StatelessWidget {
   final String text;
   final TextStyle? style;
   final AlignmentGeometry alignment;
-  const AnimatedCount(this.text, {super.key, this.style, this.alignment = Alignment.center});
+  final int? maxLines;
+  const AnimatedCount(this.text,
+      {super.key, this.style, this.alignment = Alignment.center, this.maxLines});
 
   @override
   Widget build(BuildContext context) => AnimatedSwitcher(
@@ -337,7 +346,13 @@ class AnimatedCount extends StatelessWidget {
           alignment: alignment,
           children: [...previous, ?current],
         ),
-        child: Text(text, key: ValueKey(text), style: style),
+        child: Text(
+          text,
+          key: ValueKey(text),
+          style: style,
+          maxLines: maxLines,
+          overflow: maxLines == null ? null : TextOverflow.ellipsis,
+        ),
       );
 }
 
