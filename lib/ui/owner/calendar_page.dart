@@ -5,7 +5,8 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 
-/// Días de entrega: el dueño abre días con sus horarios y la hora límite para pedir.
+/// Días de entrega: el dueño abre días con sus horarios.
+/// Se puede pedir hasta que el dueño pica "Empezar a repartir" ese día.
 class CalendarPage extends StatelessWidget {
   const CalendarPage({super.key});
 
@@ -60,7 +61,7 @@ class _DayTile extends StatelessWidget {
     return Card(
       child: ListTile(
         title: Text(dayLabel(day.date)),
-        subtitle: Text('$hours · pedidos hasta ${dateTimeLabel(day.orderCutoff)}'),
+        subtitle: Text(day.closed ? '$hours · repartiendo, pedidos cerrados' : hours),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -71,7 +72,7 @@ class _DayTile extends StatelessWidget {
                 open: v,
                 slots: day.slots,
                 slotMinutes: day.slotMinutes,
-                orderCutoff: day.orderCutoff,
+                closed: day.closed,
               )),
             ),
             IconButton(
@@ -100,7 +101,6 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
   int _weeks = 1;
   int _startHour = 8;
   int _endHour = 11;
-  int _cutoffHour = 18;
   bool _busy = false;
 
   /// Fechas que se van a abrir: los días elegidos en las próximas [_weeks] semanas.
@@ -120,7 +120,6 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
         date: date,
         open: true,
         slots: hourlySlots(_startHour, _endHour),
-        orderCutoff: defaultCutoff(date, hour: _cutoffHour),
       ));
     }
     if (mounted) Navigator.pop(context);
@@ -182,10 +181,10 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
           ),
           _hourPicker('Primera entrega desde', _startHour, (v) => _startHour = v),
           _hourPicker('Última entrega hasta', _endHour, (v) => _endHour = v),
-          _hourPicker('Pedidos hasta (día anterior)', _cutoffHour, (v) => _cutoffHour = v),
           const SizedBox(height: 8),
           Text(
-            dates.isEmpty ? 'Elige al menos un día.' : 'Se abren ${dates.length} días, en horarios de una hora.',
+            dates.isEmpty ? 'Elige al menos un día.' : 'Se abren ${dates.length} días, en horarios de una hora. '
+                    'Se puede pedir hasta que empieces a repartir.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),

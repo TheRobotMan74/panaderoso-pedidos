@@ -150,9 +150,6 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ],
           ),
         if (day != null) ...[
-          const SizedBox(height: 4),
-          Text('Puedes pedir hasta el ${dateTimeLabel(day.orderCutoff)}',
-              style: theme.textTheme.bodySmall),
           const SizedBox(height: 12),
           Text('Horario', style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
