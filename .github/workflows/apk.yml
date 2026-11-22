@@ -1,6 +1,13 @@
-# Arma la APK en cada cambio.
+# Arma y publica la app en cada cambio.
 # - En pull requests: revisa el código, corre las pruebas y deja la APK como "artifact".
-# - En main: además publica la APK en Releases ("Última versión") para descargarla con un enlace.
+# - En main, con Shorebird configurado (secreto SHOREBIRD_TOKEN):
+#     · Si el cambio es solo de pantallas o lógica (código Dart), manda una "mejora"
+#       (parche de Shorebird) que les llega sola a los celulares, sin reinstalar nada.
+#     · Si cambió algo que un parche no puede llevar (plugins, permisos, Android, imágenes),
+#       arma una APK nueva y la publica en Releases. La app avisa "Hay una versión nueva".
+#     · Si el cambio no toca la app (funciones, reglas, README), no publica nada.
+# - En main sin Shorebird: como antes, publica la APK en Releases en cada cambio.
+# Para forzar una APK nueva: Actions → APK → Run workflow → marcar "Armar APK nueva".
 name: APK
 
 on:
@@ -8,20 +15,38 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      apk_nueva:
+        description: 'Armar APK nueva aunque el cambio se pueda mandar como mejora'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 concurrency:
   group: apk-${{ github.ref }}
-  cancel-in-progress: true
+  # En main no se corta un armado a la mitad: podría quedar una versión publicada a medias.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # La misma versión de Flutter para revisar, armar y mandar mejoras (Shorebird ya la soporta).
+  FLUTTER_VERSION: '3.50.1'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      # 'true' cuando el cambio entró a main (o se corrió a mano sobre main).
+      PUBLICA: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      # 'true' cuando ya está el secreto de Shorebird. Solo dice si existe, no lo muestra.
+      CON_SHOREBIRD: ${{ secrets.SHOREBIRD_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Todo el historial, para ver qué archivos cambiaron.
+          fetch-depth: 0
 
       # Java 21: el lint de Android que corre en el armado usa métodos de Java 21
       # (con Java 17 truena con NoSuchMethodError: List.removeLast).
@@ -32,7 +57,7 @@ jobs:
 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.50.1'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
 
@@ -57,23 +82,149 @@ jobs:
           keyPassword=$KEYSTORE_PASSWORD
           PROPS
 
+      # ---------- APK normal: pull requests, y main mientras no esté Shorebird ----------
+
       - name: Armar APK
-        run: flutter build apk --release --build-number=${{ github.run_number }}
-
-      - name: Renombrar APK
-        run: cp build/app/outputs/flutter-apk/app-release.apk panaderoso.apk
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: panaderoso-apk
-          path: panaderoso.apk
+        if: env.PUBLICA != 'true' || env.CON_SHOREBIRD != 'true'
+        run: |
+          flutter build apk --release --build-number=${{ github.run_number }}
+          cp build/app/outputs/flutter-apk/app-release.apk panaderoso.apk
 
       - name: Publicar en Releases
-        # También al armar a mano desde Actions ("Run workflow" sobre main).
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: env.PUBLICA == 'true' && env.CON_SHOREBIRD != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: Panaderoso v${{ github.run_number }}
           make_latest: true
           files: panaderoso.apk
+
+      # ---------- main con Shorebird: mejora (parche) o APK nueva ----------
+
+      - name: Instalar Shorebird
+        if: env.PUBLICA == 'true' && env.CON_SHOREBIRD == 'true'
+        uses: shorebirdtech/setup-shorebird@v1
+        with:
+          cache: true
+
+      # La primera vez crea la app en Shorebird y guarda su número (shorebird.yaml) en main.
+      - name: Conectar con Shorebird (solo la primera vez)
+        id: init
+        if: env.PUBLICA == 'true' && env.CON_SHOREBIRD == 'true' && hashFiles('shorebird.yaml') == ''
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+        run: |
+          shorebird init --display-name "Panaderoso"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add shorebird.yaml pubspec.yaml
+          git commit -m "Conectar la app con Shorebird (shorebird.yaml)"
+          for intento in 1 2 3; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              echo "nueva=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::No se pudo guardar shorebird.yaml en main. El app_id está arriba en este paso."
+          exit 1
+
+      - name: Decidir si va como mejora o como APK nueva
+        id: decidir
+        if: env.PUBLICA == 'true' && env.CON_SHOREBIRD == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENTO: ${{ github.event_name }}
+          ANTES: ${{ github.event.before }}
+          APK_NUEVA: ${{ inputs.apk_nueva }}
+          APP_NUEVA: ${{ steps.init.outputs.nueva }}
+        run: |
+          # Si el cambio no toca la app (funciones, reglas, README), no hay nada que mandar.
+          if [ "$EVENTO" = push ] && [ -n "$ANTES" ] && git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            if ! git diff --name-only "$ANTES" HEAD | grep -qE '^(lib/|assets/|android/|pubspec\.(yaml|lock)$|shorebird\.yaml$)'; then
+              echo "modo=nada" >> "$GITHUB_OUTPUT"
+              echo "### Este cambio no toca la app: no se publicó nada" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
+          # La última APK armada con Shorebird trae su versión en las notas ("Shorebird: 1.0.0+25").
+          base=$(gh release view --json body --jq .body 2>/dev/null | tr -d '\r' \
+            | sed -n 's/^Shorebird: *\([^ ]*\).*$/\1/p' | head -1 || true)
+          if [ "$APK_NUEVA" = true ] || [ "$APP_NUEVA" = true ] || [ -z "$base" ]; then
+            echo "modo=apk" >> "$GITHUB_OUTPUT"
+          else
+            echo "modo=mejora" >> "$GITHUB_OUTPUT"
+            echo "base=$base" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Shorebird compara con la última APK. Si hay cambios que un parche no puede llevar
+      # (código nativo o imágenes), no manda nada y en el siguiente paso se arma una APK nueva.
+      - name: Mandar mejora (parche de Shorebird)
+        id: mejora
+        if: steps.decidir.outputs.modo == 'mejora'
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+          BASE: ${{ steps.decidir.outputs.base }}
+        run: |
+          set +e
+          shorebird patch android --release-version="$BASE" --track=stable 2>&1 | tee mejora.log
+          codigo=${PIPESTATUS[0]}
+          set -e
+          if [ "$codigo" -eq 0 ]; then
+            numero=$(sed -n 's/.*Published Patch \([0-9][0-9]*\).*/\1/p' mejora.log | tail -1)
+            echo "resultado=ok" >> "$GITHUB_OUTPUT"
+            echo "numero=$numero" >> "$GITHUB_OUTPUT"
+          elif grep -q "create a new release" mejora.log; then
+            echo "::notice::Este cambio trae piezas que una mejora no puede llevar. Se arma una APK nueva."
+            echo "resultado=necesita_apk" >> "$GITHUB_OUTPUT"
+          else
+            exit "$codigo"
+          fi
+
+      - name: Anotar la mejora en la versión publicada
+        if: steps.mejora.outputs.resultado == 'ok'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NUMERO: ${{ steps.mejora.outputs.numero }}
+        run: |
+          tag=$(gh release view --json tagName --jq .tagName)
+          # En un merge, la primera línea con texto del cuerpo es el título del pull request.
+          titulo=$(git log -1 --format=%b | sed -n '/[^[:space:]]/{p;q;}')
+          [ -n "$titulo" ] || titulo=$(git log -1 --format=%s)
+          gh release view "$tag" --json body --jq .body > notas.md
+          printf '\n- Mejora %s (%s): %s\n' "$NUMERO" "$(TZ=America/Mexico_City date +%d/%m/%Y)" "$titulo" >> notas.md
+          gh release edit "$tag" --notes-file notas.md
+          echo "### ✅ Mejora $NUMERO enviada a $tag: les llega sola a los celulares" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Armar APK nueva con Shorebird
+        id: apk
+        if: steps.decidir.outputs.modo == 'apk' || steps.mejora.outputs.resultado == 'necesita_apk'
+        env:
+          SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
+          NUMERO: ${{ github.run_number }}
+        run: |
+          shorebird release android --flutter-version="$FLUTTER_VERSION" --artifact=apk --build-number="$NUMERO"
+          cp build/app/outputs/flutter-apk/app-release.apk panaderoso.apk
+          nombre=$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)
+          echo "version=$nombre+$NUMERO" >> "$GITHUB_OUTPUT"
+          echo "### 📦 APK nueva v$NUMERO publicada: la app avisa para descargarla" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar APK nueva en Releases
+        if: steps.apk.outcome == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Panaderoso v${{ github.run_number }}
+          make_latest: true
+          files: panaderoso.apk
+          body: |
+            APK nueva: trae cambios que una mejora automática no puede llevar.
+            Quien tenga la app verá el aviso "Hay una versión nueva" para descargarla.
+
+            Shorebird: ${{ steps.apk.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        if: hashFiles('panaderoso.apk') != ''
+        with:
+          name: panaderoso-apk
+          path: panaderoso.apk

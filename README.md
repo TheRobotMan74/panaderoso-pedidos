@@ -11,9 +11,32 @@ Hecha con Flutter y Firebase (Authentication, Firestore, Storage, Cloud Messagin
 
 ## Descargar la APK
 
-Cada cambio que entra a `main` publica la APK en
+La APK más nueva está en
 [Releases](https://github.com/TheRobotMan74/panaderoso-pedidos/releases/latest) como `panaderoso.apk`.
 En los pull requests la APK queda en la pestaña **Actions**, como "panaderoso-apk".
+
+## Actualizaciones sin reinstalar (Shorebird)
+
+Cuando un cambio entra a `main`, GitHub decide solo cómo llega a los celulares:
+
+- **Mejora** (lo normal): si el cambio es de pantallas o lógica, se manda como parche de
+  [Shorebird](https://shorebird.dev). La app lo baja sola al abrirse y se ve la siguiente vez que se abre.
+  Nadie instala nada. La mejora queda anotada en las notas de la última versión en Releases.
+- **APK nueva**: si cambió algo que un parche no puede llevar (plugins, permisos, cosas de Android, imágenes),
+  se publica una APK nueva en Releases y la app muestra "Hay una versión nueva" con un botón para bajarla.
+- **Nada**: si el cambio no toca la app (funciones, reglas, este README).
+
+Para forzar una APK nueva: **Actions → APK → Run workflow**, marca "Armar APK nueva" y dale **Run workflow**.
+En la app del dueño, abajo en **Ajustes**, se ve la versión y la mejora puestas (por ejemplo "Versión 25 · mejora 2").
+
+Configuración (una sola vez): crear cuenta gratis en <https://console.shorebird.dev>, crear una API key
+(menú de la cuenta → **API keys** → **Create API key**, permiso **Full access**, vence en 1 año) y guardarla
+como secreto `SHOREBIRD_TOKEN` del repositorio. La primera vez GitHub crea la app en Shorebird y guarda
+`shorebird.yaml` en `main`. Sin el secreto, todo funciona como antes (APK nueva en cada cambio).
+
+Plan gratis de Shorebird: 5,000 instalaciones de mejoras al mes (cada celular que recibe una mejora cuenta una).
+Si se pasa, las mejoras dejan de llegar hasta el mes siguiente; no cobran extra. La API key vence al año: hay que
+crear otra y reemplazar el secreto.
 
 ## Configurar Firebase (una sola vez)
 
