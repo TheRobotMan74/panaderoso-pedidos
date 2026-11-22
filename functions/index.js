@@ -61,7 +61,43 @@ exports.avisoCambioDeEstado = onDocumentUpdated('orders/{id}', async (event) => 
   const text = STATUS_TEXT[after.status];
   if (!text) return;
 
+  // Al picarle "Empezar a repartir" los pedidos pasan a "en camino", pero a
+  // esos clientes ya les llega el aviso de "¡Ya salimos a repartir!"
+  // (avisoSalidaReparto); así no les llegan dos avisos.
+  if (after.status === 'enCamino') {
+    const t = (await getFirestore().collection('tracking').doc('current').get()).data();
+    if (t && t.active && t.date === after.deliveryDate) return;
+  }
+
   await avisarCliente(after.customerId, 'Panaderoso', text);
+});
+
+// Cuando el dueño le pica "Empezar a repartir": avisa a TODOS los clientes con
+// pedido pendiente ese día (confirmado o no), en Android y en la versión web.
+// Solo una vez por día, aunque pause y vuelva a empezar.
+exports.avisoSalidaReparto = onDocumentWritten('tracking/current', async (event) => {
+  const before = event.data?.before.data();
+  const t = event.data?.after.data();
+  if (!t || !t.active || !t.date || (before && before.active)) return;
+
+  const db = getFirestore();
+  const dia = db.collection('deliveryDays').doc(t.date);
+  const yaAvisado = await db.runTransaction(async (tx) => {
+    const d = await tx.get(dia);
+    if (d.exists && d.get('salidaAvisada') === true) return true;
+    tx.set(dia, { salidaAvisada: true }, { merge: true });
+    return false;
+  });
+  if (yaAvisado) return;
+
+  const pedidos = await db.collection('orders')
+    .where('deliveryDate', '==', t.date)
+    .where('status', 'in', PENDIENTES)
+    .get();
+  const clientes = [...new Set(pedidos.docs.map((d) => d.get('customerId')).filter(Boolean))];
+  await Promise.all(clientes.map((uid) => avisarCliente(uid, '¡Ya salimos a repartir! 🥐',
+    'Tu pan va en camino. Toca para ver en el mapa por dónde va.').catch((e) => logger.warn('aviso salida', uid, e))));
+  logger.info('aviso salida', { dia: t.date, clientes: clientes.length });
 });
 
 // Cada vez que el repartidor manda su ubicación (más o menos cada 30 m recorridos),

@@ -43,6 +43,7 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _nearMeters =
       TextEditingController(text: widget.initial.nearAlertMeters.toString());
   late double? _baseLat = widget.initial.baseLat;
+  late bool _routeReturn = widget.initial.routeReturn;
   late double? _baseLng = widget.initial.baseLng;
 
   Future<void> _pickBase() async {
@@ -86,6 +87,7 @@ class _SettingsFormState extends State<_SettingsForm> {
           .clamp(100, 10000),
       baseLat: _baseLat,
       baseLng: _baseLng,
+      routeReturn: _routeReturn,
     ));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guardado')));
@@ -177,6 +179,13 @@ class _SettingsFormState extends State<_SettingsForm> {
             onPressed: _pickBase,
             child: Text(_baseLat == null ? 'Marcar' : 'Cambiar'),
           ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          value: _routeReturn,
+          onChanged: (v) => setState(() => _routeReturn = v),
+          title: const Text('Regreso al punto de salida al terminar'),
+          subtitle: const Text('La ruta se arma pensando también en el camino de vuelta'),
         ),
         const SizedBox(height: 24),
         HoneyButton(label: 'Guardar', icon: Icons.check_rounded, onPressed: _save),

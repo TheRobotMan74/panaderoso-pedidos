@@ -136,6 +136,11 @@ class _TrackingPageState extends State<TrackingPage> {
           : 'Tu pan está a ${distanceLabel(distanceMeters(info.lat!, info.lng!, home.latitude, home.longitude))}';
       final ago = agoLabel(info.updatedAt, DateTime.now());
       subtitle = 'Distancia en línea recta · ubicación $ago';
+      // Según el orden de la ruta: cuántas entregas van antes de la tuya.
+      final ahead = info.ahead[widget.order.customerId];
+      if (ahead != null) {
+        subtitle = '${ahead == 0 ? '¡Tu entrega es la siguiente!' : ahead == 1 ? 'Falta 1 entrega antes de la tuya' : 'Faltan $ahead entregas antes de la tuya'}\n$subtitle';
+      }
     }
 
     return Scaffold(

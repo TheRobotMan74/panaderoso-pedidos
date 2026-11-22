@@ -1,4 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'dart:math';
+
+import 'package:panaderoso_pedidos/logic/day_route.dart';
 import 'package:panaderoso_pedidos/logic/demand.dart';
 import 'package:panaderoso_pedidos/logic/geo.dart';
 import 'package:panaderoso_pedidos/logic/route.dart';
@@ -262,6 +265,113 @@ void main() {
       final stops = [casa('c', '08:00', 3), casa('a', '08:00', 1), casa('b', '08:00', 2)];
       final r = routeOrder(stops, slot: (e) => e.$2, position: (e) => e.$3);
       expect(ids(r), anyOf([equals(['a', 'b', 'c']), equals(['c', 'b', 'a'])]));
+    });
+  });
+
+  group('Ruta mejorada', () {
+    (String, String, Point?) p(String id, String slot, double lat, double lng) => (id, slot, (lat, lng));
+    List<String> ids(List<(String, String, Point?)> r) => r.map((e) => e.$1).toList();
+    double len(List<(String, String, Point?)> r, Point? start, {bool back = false}) =>
+        routeLength(r, (e) => e.$3, start: start, end: back ? start : null);
+
+    // Como en Monterrey: casa al oriente; a la 1:00 centro (1) y poniente (2,3,4);
+    // a las 2:00 una en el centro (5) y otra muy al poniente (6).
+    const casa = (25.67, -100.20);
+    final dia = [
+      p('1', '13:00', 25.668, -100.31),
+      p('2', '13:00', 25.70, -100.36),
+      p('3', '13:00', 25.715, -100.33),
+      p('4', '13:00', 25.72, -100.32),
+      p('5', '14:00', 25.665, -100.31),
+      p('6', '14:00', 25.78, -100.45),
+    ];
+
+    test('ya no deja la parada lejana para el final si conviene pasar antes', () {
+      final r = routeOrder(dia, slot: (e) => e.$2, position: (e) => e.$3, start: casa, returnToStart: true);
+      // Termina la 1:00 cerca de la 6 y deja la 5 (cerca de casa) al último.
+      expect(ids(r).sublist(4), ['6', '5']);
+      expect(ids(r).last, '5');
+      expect(r.take(4).every((e) => e.$2 == '13:00'), true);
+    });
+
+    test('la ruta exacta es la más corta posible (contra probar todas)', () {
+      final rnd = Random(7);
+      for (var t = 0; t < 30; t++) {
+        final n = 3 + rnd.nextInt(4);
+        final stops = [
+          for (var i = 0; i < n; i++)
+            p('$i', rnd.nextBool() ? '08:00' : '09:00', 25 + rnd.nextDouble() / 10, -100 + rnd.nextDouble() / 10),
+        ];
+        const start = (25.05, -99.95);
+        final back = rnd.nextBool();
+        final r = routeOrder(stops, slot: (e) => e.$2, position: (e) => e.$3, start: start, returnToStart: back);
+        var best = double.infinity;
+        void perm(List<(String, String, Point?)> done, List<(String, String, Point?)> left) {
+          if (left.isEmpty) {
+            for (var i = 1; i < done.length; i++) {
+              if (done[i].$2.compareTo(done[i - 1].$2) < 0) return;
+            }
+            best = min(best, len(done, start, back: back));
+            return;
+          }
+          for (final x in left) {
+            perm([...done, x], [...left]..remove(x));
+          }
+        }
+
+        perm([], stops);
+        expect(len(r, start, back: back), closeTo(best, 0.5));
+      }
+    });
+
+    test('con muchas casas también respeta horarios y no deja a nadie', () {
+      final rnd = Random(3);
+      final stops = [
+        for (var i = 0; i < 40; i++)
+          p('$i', ['08:00', '09:00', '10:00'][i % 3], 25 + rnd.nextDouble() / 10, -100 + rnd.nextDouble() / 10),
+      ];
+      const start = (25.0, -100.0);
+      final r = routeOrder(stops, slot: (e) => e.$2, position: (e) => e.$3, start: start, returnToStart: true);
+      expect(r.toSet().length, 40);
+      for (var i = 1; i < r.length; i++) {
+        expect(r[i].$2.compareTo(r[i - 1].$2) >= 0, true);
+      }
+    });
+
+    test('el orden a mano se respeta y los nuevos se acomodan en su horario', () {
+      final r = applySavedOrder<(String, String, Point?)>(
+        dia,
+        ['6', '1', '2', '3', '4'],
+        id: (e) => e.$1,
+        slot: (e) => e.$2,
+        position: (e) => e.$3,
+        start: casa,
+      );
+      expect(ids(r).sublist(0, 5), ['6', '1', '2', '3', '4']);
+      expect(ids(r).last, '5'); // De las 2:00: no puede ir antes de los de la 1:00.
+      expect(earlyStops(r, (e) => e.$2), [true, false, false, false, false, false]);
+    });
+
+    test('cuántas entregas faltan antes de cada cliente', () {
+      BakeryOrder o(String id, String uid, OrderStatus st) => BakeryOrder(
+            id: id,
+            customerId: uid,
+            customerName: uid,
+            phone: '',
+            address: '',
+            items: const [],
+            deliveryDate: '2026-11-22',
+            slot: '13:00',
+            paymentMethod: PaymentMethod.efectivo,
+            status: st,
+          );
+      final a = aheadByCustomer([
+        o('1', 'ana', OrderStatus.entregado),
+        o('2', 'beto', OrderStatus.enCamino),
+        o('3', 'caro', OrderStatus.enCamino),
+        o('4', 'beto', OrderStatus.enCamino),
+      ]);
+      expect(a, {'beto': 0, 'caro': 1});
     });
   });
 

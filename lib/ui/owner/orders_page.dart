@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../logic/route.dart';
+import '../../logic/day_route.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
@@ -12,10 +12,12 @@ import '../status_chip.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'day_route_map.dart';
+import 'route_editor_page.dart';
 
 /// Pedidos en vivo, agrupados por día y horario.
-/// Dentro de cada horario van en orden de ruta (la más corta desde tu punto de salida),
-/// y al final está el mapa del día con las casas numeradas.
+/// Cada día va en orden de ruta: la que acomodaste a mano, o si no, la más corta
+/// respetando horarios. Al final está el mapa del día con las casas numeradas
+/// y el botón para cambiar el orden.
 /// Hasta abajo, plegados: los cancelados y los de días que ya pasaron.
 /// Con "Seleccionar varios" se pueden borrar muchos de un jalón (por ejemplo, los de prueba).
 class OrdersPage extends StatefulWidget {
@@ -32,6 +34,10 @@ class _OrdersPageState extends State<OrdersPage> {
 
   bool get _selecting => _selected != null;
 
+  /// Días de entrega (para el orden de ruta que se haya guardado a mano).
+  late final Stream<List<DeliveryDay>> _days =
+      Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
+
   void _toggle(String id) {
     HapticFeedback.selectionClick();
     setState(() {
@@ -44,22 +50,30 @@ class _OrdersPageState extends State<OrdersPage> {
   Widget build(BuildContext context) {
     return StreamBuilder<AppConfig>(
       stream: Repo.instance.config(),
-      builder: (context, cfgSnap) => _orders(context, cfgSnap.data ?? const AppConfig()),
+      builder: (context, cfgSnap) => StreamBuilder<List<DeliveryDay>>(
+        stream: _days,
+        builder: (context, daysSnap) => _orders(
+          context,
+          cfgSnap.data ?? const AppConfig(),
+          {for (final d in daysSnap.data ?? const <DeliveryDay>[]) d.date: d},
+        ),
+      ),
     );
   }
 
-  /// Ordena cada día por horario y, dentro del horario, por ruta.
-  static List<BakeryOrder> _routed(List<BakeryOrder> orders, Point? base) {
+  /// Ordena cada día por ruta (la acomodada a mano, o la que arma la app).
+  static List<BakeryOrder> _routed(List<BakeryOrder> orders, AppConfig cfg, Map<String, DeliveryDay> days) {
     final dates = orders.map((o) => o.deliveryDate).toSet().toList()..sort();
     return [
       for (final d in dates)
-        ...routeOrder<BakeryOrder>(
-          orders.where((o) => o.deliveryDate == d).toList(),
-          slot: (o) => o.slot,
-          position: (o) => o.hasLocation ? (o.lat!, o.lng!) : null,
-          start: base,
-        ),
+        ...dayRoute(orders.where((o) => o.deliveryDate == d).toList(), cfg, day: days[d]),
     ];
+  }
+
+  void _editRoute(String date, List<BakeryOrder> route, AppConfig cfg, bool manual) {
+    Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => RouteEditorPage(date: date, initial: route, cfg: cfg, manual: manual),
+    ));
   }
 
   Future<void> _deleteSelected(List<BakeryOrder> all) async {
@@ -107,9 +121,8 @@ class _OrdersPageState extends State<OrdersPage> {
     }
   }
 
-  Widget _orders(BuildContext context, AppConfig cfg) {
-    final Point? base =
-        cfg.baseLat != null && cfg.baseLng != null ? (cfg.baseLat!, cfg.baseLng!) : null;
+  Widget _orders(BuildContext context, AppConfig cfg, Map<String, DeliveryDay> days) {
+    final base = basePoint(cfg);
     final now = DateTime.now();
     final today = dateKey(now);
     // También trae los de las últimas semanas, para poder borrar pedidos de prueba viejos.
@@ -126,7 +139,8 @@ class _OrdersPageState extends State<OrdersPage> {
           all
               .where((o) => o.status != OrderStatus.cancelado && o.deliveryDate.compareTo(today) >= 0)
               .toList(),
-          base,
+          cfg,
+          days,
         );
         final cancelled = all.where((o) => o.status == OrderStatus.cancelado).toList()
           ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
@@ -222,12 +236,17 @@ class _OrdersPageState extends State<OrdersPage> {
         } else if (!_selecting) {
           // Mapa del día más próximo (hoy, o el siguiente día con pedidos).
           final mapDate = orders.first.deliveryDate;
+          final stops = orders.where((o) => o.deliveryDate == mapDate).toList();
+          final manual = days[mapDate]?.routeOrder.isNotEmpty ?? false;
           children.add(Padding(
             padding: const EdgeInsets.only(top: 8),
             child: DayRouteMap(
               date: mapDate,
-              stops: orders.where((o) => o.deliveryDate == mapDate).toList(),
+              stops: stops,
               base: base,
+              returnToBase: cfg.routeReturn,
+              manual: manual,
+              onEdit: () => _editRoute(mapDate, stops, cfg, manual),
             ),
           ));
         }
