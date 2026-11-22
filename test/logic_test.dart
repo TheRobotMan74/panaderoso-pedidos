@@ -6,6 +6,7 @@ import 'package:panaderoso_pedidos/logic/schedule.dart';
 import 'package:panaderoso_pedidos/logic/shipping.dart';
 import 'package:panaderoso_pedidos/logic/stock.dart';
 import 'package:panaderoso_pedidos/models.dart';
+import 'package:panaderoso_pedidos/ui/format.dart';
 
 BakeryOrder _order(String date, String slot, Map<String, int> items,
         {OrderStatus status = OrderStatus.recibido}) =>
@@ -25,6 +26,15 @@ BakeryOrder _order(String date, String slot, Map<String, int> items,
     );
 
 void main() {
+  group('Encabezados en renglones', () {
+    test('parte nombres largos en renglones cortos', () {
+      expect(wrapShort('Croissant de Jamón y Queso'), 'Croissant\nde Jamón\ny Queso');
+      expect(wrapShort('Croissant de Pizza'), 'Croissant\nde Pizza');
+      expect(wrapShort('Chocolatín'), 'Chocolatín');
+      expect(wrapShort('Dona'), 'Dona');
+    });
+  });
+
   group('Costo de envío', () {
     const rules = ShippingRules(enabled: true);
 
