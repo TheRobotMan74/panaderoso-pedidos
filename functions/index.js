@@ -7,12 +7,28 @@
 // - recontarCupo*: cuando un pedido se cancela, se borra o cambia, se recuenta el día.
 const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentDeleted } = require('firebase-functions/v2/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { getStorage } = require('firebase-admin/storage');
 
 initializeApp();
+
+// Tope de copias de cada función corriendo a la vez. Si alguien manda miles de
+// peticiones de golpe, no se multiplican los servidores (ni el cobro): las de más esperan
+// o fallan. Para una panadería, 10 alcanza de sobra (cada copia atiende muchas a la vez).
+setGlobalOptions({ maxInstances: 10 });
+
+// App Check en las funciones que llama la app (hacerPedido, moverDia, mandarRecuperacion).
+// Fase 1 y 2 (monitoreo): false. Se aceptan todas, pero cada llamada deja en el registro
+// si traía el "pase" de la app original o no (busca "appcheck" en los registros).
+// Fase 3: true, cuando casi todos tengan la APK nueva. Sin pase válido, se rechaza.
+const EXIGIR_APP_CHECK = false;
+
+function anotarPase(funcion, req) {
+  logger.info('appcheck', { funcion, pase: req.app ? 'valido' : 'sin-pase' });
+}
 
 const STATUS_TEXT = {
   confirmado: 'Tu pedido está confirmado.',
@@ -131,7 +147,8 @@ const numeroONull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : nu
 
 // El cliente hace su pedido. Todo pasa dentro de una transacción: si dos personas
 // piden los últimos panes al mismo tiempo, solo una se los lleva.
-exports.hacerPedido = onCall(async (req) => {
+exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('hacerPedido', req);
   const uid = req.auth && req.auth.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Inicia sesión para hacer tu pedido.');
   const d = req.data || {};
@@ -346,7 +363,8 @@ function horarioBonito(slot, minutos) {
 
 const PENDIENTES = ['recibido', 'confirmado', 'enCamino'];
 
-exports.moverDia = onCall(async (req) => {
+exports.moverDia = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('moverDia', req);
   if (!(await esDueno(req.auth && req.auth.uid))) {
     throw new HttpsError('permission-denied', 'Solo el dueño puede mover días.');
   }
@@ -438,7 +456,8 @@ const claveGmail = defineSecret('CLAVE_GMAIL');
 const MAX_POR_CORREO_POR_HORA = 3;
 const MAX_POR_DIA = 300; // Gmail gratis permite unos 500 al día.
 
-exports.mandarRecuperacion = onCall({ secrets: [correoGmail, claveGmail] }, async (req) => {
+exports.mandarRecuperacion = onCall({ secrets: [correoGmail, claveGmail], enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('mandarRecuperacion', req);
   const email = String((req.data && req.data.email) || '').trim().toLowerCase();
   if (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new HttpsError('invalid-argument', 'El correo no es válido.');

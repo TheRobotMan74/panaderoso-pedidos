@@ -1,5 +1,7 @@
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -20,6 +22,19 @@ Future<void> main() async {
   await initializeDateFormatting('es_MX');
   if (DefaultFirebaseOptions.isConfigured) {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.android);
+    // App Check: cada pedido, foto o consulta lleva un "pase" que dice que viene de
+    // nuestra app original (revisado por Google con Play Integrity) y no de un programa
+    // copiado. Las APK de prueba usan el pase de pruebas (sale en el registro del celular).
+    // Si algo falla, la app sigue abriendo igual.
+    try {
+      await FirebaseAppCheck.instance.activate(
+        providerAndroid: kReleaseMode
+            ? const AndroidPlayIntegrityProvider()
+            : const AndroidDebugProvider(),
+      );
+    } catch (e) {
+      debugPrint('App Check no se pudo activar: $e');
+    }
     // Los correos de Firebase (por ejemplo "restablecer contraseña") y su página van en español.
     try {
       await FirebaseAuth.instance.setLanguageCode('es');
