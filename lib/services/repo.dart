@@ -79,6 +79,12 @@ class Repo {
       .snapshots()
       .map((s) => AppConfig.fromMap(s.data()));
 
+  /// Guarda el punto de salida del reparto sin tocar lo demás.
+  Future<void> saveBaseLocation(double lat, double lng) => _db
+      .collection('config')
+      .doc('app')
+      .set({'baseLat': lat, 'baseLng': lng}, SetOptions(merge: true));
+
   Future<void> saveConfig(AppConfig c) =>
       _db.collection('config').doc('app').set(c.toMap());
 

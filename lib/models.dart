@@ -293,12 +293,18 @@ class AppConfig {
   /// A cuántos metros del domicilio se le avisa al cliente que ya va a llegar.
   final int nearAlertMeters;
 
+  /// Punto de salida del reparto (tu casa o la panadería), para ordenar la ruta.
+  final double? baseLat;
+  final double? baseLng;
+
   const AppConfig({
     this.bankName = '',
     this.clabe = '',
     this.accountHolder = '',
     this.shipping = const ShippingRules(),
     this.nearAlertMeters = 1000,
+    this.baseLat,
+    this.baseLng,
   });
 
   factory AppConfig.fromMap(Map<String, dynamic>? m) => AppConfig(
@@ -308,6 +314,8 @@ class AppConfig {
         shipping: ShippingRules.fromMap(
             m?['shipping'] == null ? null : Map<String, dynamic>.from(m!['shipping'] as Map)),
         nearAlertMeters: (m?['nearAlertMeters'] as num?)?.toInt() ?? 1000,
+        baseLat: (m?['baseLat'] as num?)?.toDouble(),
+        baseLng: (m?['baseLng'] as num?)?.toDouble(),
       );
 
   Map<String, dynamic> toMap() => {
@@ -316,6 +324,8 @@ class AppConfig {
         'accountHolder': accountHolder,
         'shipping': shipping.toMap(),
         'nearAlertMeters': nearAlertMeters,
+        'baseLat': baseLat,
+        'baseLng': baseLng,
       };
 }
 

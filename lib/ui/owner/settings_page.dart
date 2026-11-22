@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../logic/shipping.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../location_picker_page.dart';
+import '../theme.dart';
 import '../widgets.dart';
 
 /// Datos para transferencias y reglas de envío.
@@ -38,6 +40,31 @@ class _SettingsFormState extends State<_SettingsForm> {
   late bool _shippingEnabled = widget.initial.shipping.enabled;
   late final _nearMeters =
       TextEditingController(text: widget.initial.nearAlertMeters.toString());
+  late double? _baseLat = widget.initial.baseLat;
+  late double? _baseLng = widget.initial.baseLng;
+
+  Future<void> _pickBase() async {
+    final picked = await Navigator.push<PickedLocation>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerPage(
+          lat: _baseLat,
+          lng: _baseLng,
+          title: '¿De dónde sales a repartir?',
+          confirmLabel: 'Salgo de aquí',
+        ),
+      ),
+    );
+    if (picked == null) return;
+    setState(() {
+      _baseLat = picked.lat;
+      _baseLng = picked.lng;
+    });
+    await Repo.instance.saveBaseLocation(picked.lat, picked.lng);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Punto de salida guardado')));
+  }
 
   Future<void> _save() async {
     final old = widget.initial.shipping;
@@ -53,6 +80,8 @@ class _SettingsFormState extends State<_SettingsForm> {
       ),
       nearAlertMeters: (int.tryParse(_nearMeters.text.trim()) ?? widget.initial.nearAlertMeters)
           .clamp(100, 10000),
+      baseLat: _baseLat,
+      baseLng: _baseLng,
     ));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guardado')));
@@ -120,6 +149,19 @@ class _SettingsFormState extends State<_SettingsForm> {
             labelText: 'Avisar al cliente cuando estés a',
             suffixText: 'metros',
             helperText: '1000 m son como 2 o 3 minutos en carro',
+          ),
+        ),
+        const SizedBox(height: 16),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.home_work_rounded, color: Pan.caramelo),
+          title: const Text('Punto de salida'),
+          subtitle: Text(_baseLat == null
+              ? 'Marca tu casa o la panadería: de ahí empieza la ruta del día'
+              : 'Marcado en el mapa. La ruta del día empieza aquí.'),
+          trailing: OutlinedButton(
+            onPressed: _pickBase,
+            child: Text(_baseLat == null ? 'Marcar' : 'Cambiar'),
           ),
         ),
         const SizedBox(height: 24),
