@@ -1,7 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:panaderoso_pedidos/logic/demand.dart';
 import 'package:panaderoso_pedidos/models.dart';
+import 'package:panaderoso_pedidos/ui/owner/demand_page.dart';
 import 'package:panaderoso_pedidos/ui/customer/customer_home.dart';
 import 'package:panaderoso_pedidos/ui/owner/route_editor_page.dart';
 import 'package:panaderoso_pedidos/ui/product_image.dart';
@@ -90,6 +92,42 @@ void main() {
     expect(find.text('Quedan 40 panes disponibles'), findsOneWidget);
     expect(find.text('quedan 12 panes de 30'), findsOneWidget);
     expect(find.text('Agotado'), findsOneWidget);
+  });
+
+  testWidgets('La tabla por horario se arma sin desbordarse en un celular', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final demand = DayDemand(
+      '2026-11-22',
+      [
+        SlotDemand('10:00')
+          ..orders = 3
+          ..piecesByProduct.addAll({'Chocolatín': 13, 'Croissant de Jamón y Queso': 1, 'Dona': 6}),
+        SlotDemand('11:00')
+          ..orders = 3
+          ..piecesByProduct.addAll({
+            'Chocolatín': 10,
+            'Croissant de Jamón y Queso': 4,
+            'Croissant de Pizza': 2,
+            'Dona': 4,
+          }),
+      ],
+      {'Chocolatín': 23, 'Croissant de Jamón y Queso': 5, 'Croissant de Pizza': 2, 'Dona': 10},
+    );
+    final products = demand.totalByProduct.keys.toList()..sort();
+    await tester.pumpWidget(
+      _app(
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: SlotDemandTable(demand: demand, products: products),
+        ),
+      ),
+    );
+    expect(tester.takeException(), isNull);
+    expect(find.text('Croissant\nde Jamón\ny Queso'), findsOneWidget);
+    expect(find.text('10:00'), findsOneWidget);
+    expect(find.text('23'), findsOneWidget);
   });
 
   testWidgets('ordenar ruta a mano: arrastrar cambia el orden y "Optimizar" lo regresa', (tester) async {

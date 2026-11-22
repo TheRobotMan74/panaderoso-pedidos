@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/demand.dart';
@@ -97,39 +99,7 @@ class _DayCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text('Por horario', style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columnSpacing: 16,
-                horizontalMargin: 4,
-                headingRowHeight: 36,
-                dataRowMinHeight: 32,
-                dataRowMaxHeight: 40,
-                columns: [
-                  const DataColumn(label: Text('Horario')),
-                  const DataColumn(label: Text('Pedidos'), numeric: true),
-                  for (final p in products) DataColumn(label: Text(p), numeric: true),
-                ],
-                rows: [
-                  for (final s in demand.slots)
-                    DataRow(cells: [
-                      DataCell(Text(slotLabel(s.slot))),
-                      DataCell(Text('${s.orders}')),
-                      for (final p in products) DataCell(Text('${s.piecesByProduct[p] ?? 0}')),
-                    ]),
-                  DataRow(
-                    color: const WidgetStatePropertyAll(Color(0xFFFFF4D6)),
-                    cells: [
-                      const DataCell(Text('Total', style: TextStyle(fontWeight: FontWeight.w900))),
-                      DataCell(Text('${demand.orders}', style: const TextStyle(fontWeight: FontWeight.w900))),
-                      for (final p in products)
-                        DataCell(Text('${demand.totalByProduct[p]}',
-                            style: const TextStyle(fontWeight: FontWeight.w900))),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            SlotDemandTable(demand: demand, products: products),
           ],
         ],
       ),
@@ -225,4 +195,220 @@ class _Bar extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// Tabla "Por horario" compacta: el horario queda fijo a la izquierda, los
+/// nombres largos se parten en renglones y los números van centrados bajo su
+/// encabezado. Las columnas se reparten el ancho; solo si son muchos productos
+/// se desliza de lado la parte de los números.
+class SlotDemandTable extends StatelessWidget {
+  final DayDemand demand;
+  final List<String> products;
+  const SlotDemandTable({super.key, required this.demand, required this.products});
+
+  static const _rowH = 40.0;
+  static const _headStyle = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w800,
+    height: 1.15,
+    color: Pan.canela,
+  );
+  static const _slotStyle = TextStyle(
+    fontSize: 13.5,
+    fontWeight: FontWeight.w800,
+    color: Pan.cacao,
+    height: 1.1,
+  );
+  static const _emojiStyle = TextStyle(fontSize: 17);
+  static const _numStyle = TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Pan.cacao);
+  static const _totalStyle = TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Pan.cacao);
+
+  @override
+  Widget build(BuildContext context) {
+    final headers = ['Pedidos', for (final p in products) wrapShort(p)];
+    final emojis = ['🧾', for (final p in products) productArt(p).$1];
+    final slotRows = [
+      for (final s in demand.slots) [s.orders, for (final p in products) s.piecesByProduct[p] ?? 0],
+    ];
+    final totals = [demand.orders, for (final p in products) demand.totalByProduct[p] ?? 0];
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Medimos con la letra y el tamaño de texto del celular.
+        final scaler = MediaQuery.textScalerOf(context);
+        final base = DefaultTextStyle.of(context).style;
+        Size measure(String text, TextStyle style, [double maxW = double.infinity]) {
+          final tp = TextPainter(
+            text: TextSpan(text: text, style: base.merge(style)),
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+            textScaler: scaler,
+          )..layout(maxWidth: maxW);
+          final size = tp.size;
+          tp.dispose();
+          return size;
+        }
+
+        // Columna del horario: lo justo para "10:00", "Horario" y "Total".
+        final labelW =
+            10 +
+            [
+              for (final s in demand.slots) measure(_start(s.slot), _slotStyle).width,
+              measure('Horario', _headStyle).width,
+              measure('Total', _totalStyle).width,
+            ].reduce(math.max);
+
+        // Cada columna pide lo de su palabra más larga o su número más grande;
+        // lo que sobra se reparte parejo para que todo quede centrado.
+        final need = [
+          for (final (i, h) in headers.indexed)
+            5 +
+                [
+                  for (final w in h.split(RegExp(r'\s+'))) measure(w, _headStyle).width,
+                  for (final r in [...slotRows, totals]) measure('${r[i]}', _totalStyle).width,
+                ].reduce(math.max),
+        ];
+        final avail = c.maxWidth - labelW;
+        final needSum = need.fold(0.0, (a, b) => a + b);
+        final extra = needSum < avail ? (avail - needSum) / need.length : 0.0;
+        final widths = [for (final n in need) n + extra];
+        final fits = needSum <= avail + 0.5;
+
+        final emojiH = measure('🥐', _emojiStyle).height;
+        final headH =
+            emojiH +
+            2 +
+            [for (final (i, h) in headers.indexed) measure(h, _headStyle, widths[i] - 4).height]
+                .reduce(math.max) +
+            10;
+
+        Widget cell(int i, Widget child, {double? h}) => SizedBox(
+          width: widths[i],
+          height: h ?? _rowH,
+          child: Center(child: child),
+        );
+        Widget numText(int v, TextStyle style) =>
+            Text('$v', style: v == 0 ? style.copyWith(color: Pan.canela.withValues(alpha: 0.45)) : style);
+
+        final numbers = Column(
+          children: [
+            Row(
+              children: [
+                for (final (i, h) in headers.indexed)
+                  cell(
+                    i,
+                    h: headH,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Column(
+                        // Dibujitos parejos arriba; nombres pegados a la línea de abajo.
+                        children: [
+                          Text(emojis[i], style: _emojiStyle),
+                          const SizedBox(height: 2),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: Text(h, textAlign: TextAlign.center, style: _headStyle),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            for (final r in slotRows)
+              _line(Row(children: [for (final (i, v) in r.indexed) cell(i, numText(v, _numStyle))])),
+            _line(
+              Row(children: [for (final (i, v) in totals.indexed) cell(i, numText(v, _totalStyle))]),
+              total: true,
+            ),
+          ],
+        );
+
+        final label = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: headH,
+              child: const Align(
+                alignment: Alignment.bottomLeft,
+                child: Padding(
+                  padding: EdgeInsets.only(bottom: 6, left: 6),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Horario', style: _headStyle),
+                  ),
+                ),
+              ),
+            ),
+            for (final s in demand.slots) _line(_slotLabel(s.slot), width: labelW),
+            _line(
+              const Padding(
+                padding: EdgeInsets.only(left: 6),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Total', style: _totalStyle),
+                ),
+              ),
+              width: labelW,
+              total: true,
+            ),
+          ],
+        );
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            label,
+            Expanded(
+              child: fits ? numbers : SingleChildScrollView(scrollDirection: Axis.horizontal, child: numbers),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// "10:00" de "10:00 a 11:00".
+  static String _start(String slot) {
+    final full = slotLabel(slot);
+    final cut = full.indexOf(' a ');
+    return cut < 0 ? full : full.substring(0, cut);
+  }
+
+  /// "10:00" grande y "a 11:00" chiquito abajo, para que quepa en poco ancho.
+  Widget _slotLabel(String slot) {
+    final start = _start(slot);
+    final rest = slotLabel(slot).substring(start.length).trim();
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(start, style: _slotStyle),
+            if (rest.isNotEmpty)
+              Text(rest, style: const TextStyle(fontSize: 10.5, color: Pan.canela, height: 1.1)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Renglón con su línea arriba; el de total va resaltado en miel.
+  Widget _line(Widget child, {double? width, bool total = false}) => Container(
+    width: width,
+    height: _rowH,
+    alignment: Alignment.centerLeft,
+    decoration: BoxDecoration(
+      color: total ? const Color(0xFFFFF4D6) : null,
+      border: const Border(top: BorderSide(color: Pan.harina)),
+    ),
+    child: child,
+  );
 }
