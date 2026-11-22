@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../logic/route.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
@@ -10,13 +11,39 @@ import '../product_image.dart';
 import '../status_chip.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'day_route_map.dart';
 
 /// Pedidos en vivo, agrupados por día y horario.
+/// Dentro de cada horario van en orden de ruta (la más corta desde tu punto de salida),
+/// y al final está el mapa del día con las casas numeradas.
 class OrdersPage extends StatelessWidget {
   const OrdersPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    return StreamBuilder<AppConfig>(
+      stream: Repo.instance.config(),
+      builder: (context, cfgSnap) => _orders(context, cfgSnap.data ?? const AppConfig()),
+    );
+  }
+
+  /// Ordena cada día por horario y, dentro del horario, por ruta.
+  static List<BakeryOrder> _routed(List<BakeryOrder> orders, Point? base) {
+    final dates = orders.map((o) => o.deliveryDate).toSet().toList()..sort();
+    return [
+      for (final d in dates)
+        ...routeOrder<BakeryOrder>(
+          orders.where((o) => o.deliveryDate == d).toList(),
+          slot: (o) => o.slot,
+          position: (o) => o.hasLocation ? (o.lat!, o.lng!) : null,
+          start: base,
+        ),
+    ];
+  }
+
+  Widget _orders(BuildContext context, AppConfig cfg) {
+    final Point? base =
+        cfg.baseLat != null && cfg.baseLng != null ? (cfg.baseLat!, cfg.baseLng!) : null;
     return StreamBuilder<List<BakeryOrder>>(
       stream: Repo.instance.ordersFrom(dateKey(DateTime.now())),
       builder: (context, snap) {
@@ -24,11 +51,10 @@ class OrdersPage extends StatelessWidget {
           return EmptyState(title: 'No cargaron los pedidos', message: '${snap.error}');
         }
         if (!snap.hasData) return const SkeletonList(count: 3);
-        final orders = snap.data!.where((o) => o.status != OrderStatus.cancelado).toList()
-          ..sort((a, b) {
-            final c = a.deliveryDate.compareTo(b.deliveryDate);
-            return c != 0 ? c : a.slot.compareTo(b.slot);
-          });
+        final orders = _routed(
+          snap.data!.where((o) => o.status != OrderStatus.cancelado).toList(),
+          base,
+        );
         if (orders.isEmpty) {
           return const EmptyState(
             title: 'Todo tranquilo por aquí',
@@ -38,10 +64,12 @@ class OrdersPage extends StatelessWidget {
         final children = <Widget>[];
         String? lastDate;
         String? lastSlot;
+        var stop = 0;
         for (final o in orders) {
           if (o.deliveryDate != lastDate) {
             lastDate = o.deliveryDate;
             lastSlot = null;
+            stop = 0;
             final count = orders.where((x) => x.deliveryDate == o.deliveryDate).length;
             children.add(
               SectionTitle(
@@ -80,8 +108,30 @@ class OrdersPage extends StatelessWidget {
               ),
             );
           }
-          children.add(_OrderCard(key: ValueKey(o.id), order: o));
+          stop++;
+          final daySlots = orders
+              .where((x) => x.deliveryDate == o.deliveryDate)
+              .map((x) => x.slot)
+              .toSet()
+              .toList()
+            ..sort();
+          children.add(_OrderCard(
+            key: ValueKey(o.id),
+            order: o,
+            stop: stop,
+            stopColor: colorForSlot(daySlots, o.slot),
+          ));
         }
+        // Mapa del día más próximo (hoy, o el siguiente día con pedidos).
+        final mapDate = orders.first.deliveryDate;
+        children.add(Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: DayRouteMap(
+            date: mapDate,
+            stops: orders.where((o) => o.deliveryDate == mapDate).toList(),
+            base: base,
+          ),
+        ));
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
           itemCount: children.length,
@@ -94,7 +144,11 @@ class OrdersPage extends StatelessWidget {
 
 class _OrderCard extends StatelessWidget {
   final BakeryOrder order;
-  const _OrderCard({super.key, required this.order});
+
+  /// Número de parada en la ruta del día.
+  final int stop;
+  final Color stopColor;
+  const _OrderCard({super.key, required this.order, required this.stop, required this.stopColor});
 
   static const _next = {
     OrderStatus.recibido: (OrderStatus.confirmado, 'Confirmar'),
@@ -179,6 +233,11 @@ class _OrderCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
+                      _StopBadge(
+                        stop: stop,
+                        color: o.status == OrderStatus.entregado ? const Color(0xFF9E9E9E) : stopColor,
+                      ),
+                      const SizedBox(width: 8),
                       Expanded(child: Text(o.customerName, style: theme.textTheme.titleMedium)),
                       StatusChip(status: o.status),
                     ],
@@ -302,4 +361,23 @@ class _OrderCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Circulito con el número de parada (igual al del mapa del día).
+class _StopBadge extends StatelessWidget {
+  final int stop;
+  final Color color;
+  const _StopBadge({required this.stop, required this.color});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 26,
+        height: 26,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Text(
+          '$stop',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
+        ),
+      );
 }
