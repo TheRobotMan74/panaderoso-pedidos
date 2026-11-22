@@ -46,10 +46,22 @@ class _LoginPageState extends State<LoginPage> {
       setState(() => _error = 'Escribe tu correo para mandarte el enlace.');
       return;
     }
-    await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      // Si el correo no existe no se dice nada, para no revelar quién tiene cuenta.
+      if (e.code != 'user-not-found') {
+        setState(() => _error = _message(e.code));
+        return;
+      }
+    }
     if (!mounted) return;
+    setState(() => _error = null);
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Te mandamos un correo para cambiar tu contraseña.')),
+      const SnackBar(
+        content: Text('Te mandamos un correo para cambiar tu contraseña. '
+            'Si no lo ves en unos minutos, revisa tu carpeta de spam.'),
+      ),
     );
   }
 

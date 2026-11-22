@@ -19,6 +19,10 @@ Future<void> main() async {
   await initializeDateFormatting('es_MX');
   if (DefaultFirebaseOptions.isConfigured) {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.android);
+    // Los correos de Firebase (por ejemplo "restablecer contraseña") y su página van en español.
+    try {
+      await FirebaseAuth.instance.setLanguageCode('es');
+    } catch (_) {}
   }
   runApp(const PanaderosoApp());
 }
