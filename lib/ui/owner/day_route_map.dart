@@ -29,7 +29,28 @@ class DayRouteMap extends StatefulWidget {
   final List<BakeryOrder> stops;
   final Point? base;
 
-  const DayRouteMap({super.key, required this.date, required this.stops, this.base});
+  /// true = la ruta termina de regreso en el punto de salida.
+  final bool returnToBase;
+
+  /// true = el orden lo acomodó el dueño a mano.
+  final bool manual;
+
+  /// Abre la pantalla para cambiar el orden. Null = no se muestra el botón.
+  final VoidCallback? onEdit;
+
+  /// Solo el mapa (para la pantalla de ordenar): sin título, leyenda ni botones.
+  final bool compact;
+
+  const DayRouteMap({
+    super.key,
+    required this.date,
+    required this.stops,
+    this.base,
+    this.returnToBase = false,
+    this.manual = false,
+    this.onEdit,
+    this.compact = false,
+  });
 
   @override
   State<DayRouteMap> createState() => _DayRouteMapState();
@@ -131,6 +152,13 @@ class _DayRouteMapState extends State<DayRouteMap> {
         for (final o in _located) LatLng(o.lat!, o.lng!),
       ];
 
+  /// La línea del mapa: igual que [_points] y, si regresas, de vuelta a casa.
+  List<LatLng> get _line => [
+        ..._points,
+        if (widget.base != null && widget.returnToBase && _located.isNotEmpty)
+          LatLng(widget.base!.$1, widget.base!.$2),
+      ];
+
   void _fit() {
     final pts = _points;
     if (_map == null || pts.isEmpty) return;
@@ -181,8 +209,46 @@ class _DayRouteMapState extends State<DayRouteMap> {
           located,
           (o) => (o.lat!, o.lng!),
           start: widget.base,
+          end: widget.returnToBase ? widget.base : null,
         ) /
         1000;
+
+    final map = SizedBox(
+      height: widget.compact ? 220 : 340,
+      child: located.isEmpty
+          ? const EmptyState(
+              title: 'Sin casas marcadas',
+              message: 'Cuando tus clientes marquen su casa en el mapa, aparecen aquí.',
+            )
+          : GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(located.first.lat!, located.first.lng!),
+                zoom: 13,
+              ),
+              markers: _markers,
+              polylines: {
+                Polyline(
+                  polylineId: const PolylineId('ruta'),
+                  points: _line,
+                  color: Pan.caramelo.withValues(alpha: 0.75),
+                  width: 4,
+                  patterns: [PatternItem.dash(18), PatternItem.gap(10)],
+                ),
+              },
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              myLocationButtonEnabled: false,
+              // Para mover el mapa sin que se mueva la lista.
+              gestureRecognizers: {
+                Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+              },
+              onMapCreated: (c) {
+                _map = c;
+                Future.delayed(const Duration(milliseconds: 300), _fit);
+              },
+            ),
+    );
+    if (widget.compact) return map;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,47 +257,16 @@ class _DayRouteMapState extends State<DayRouteMap> {
           'Ruta del ${dayLabel(widget.date).split(' ').take(2).join(' ')}',
           trailing: located.isEmpty
               ? null
-              : Text('≈ ${distanceLabel(km * 1000)}', style: theme.textTheme.bodySmall),
+              : Text(
+                  '${widget.manual ? 'A mano · ' : ''}≈ ${distanceLabel(km * 1000)}',
+                  style: theme.textTheme.bodySmall,
+                ),
         ),
         PanCard(
           padding: EdgeInsets.zero,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(Pan.radio),
-            child: SizedBox(
-              height: 340,
-              child: located.isEmpty
-                  ? const EmptyState(
-                      title: 'Sin casas marcadas',
-                      message: 'Cuando tus clientes marquen su casa en el mapa, aparecen aquí.',
-                    )
-                  : GoogleMap(
-                      initialCameraPosition: CameraPosition(
-                        target: LatLng(located.first.lat!, located.first.lng!),
-                        zoom: 13,
-                      ),
-                      markers: _markers,
-                      polylines: {
-                        Polyline(
-                          polylineId: const PolylineId('ruta'),
-                          points: _points,
-                          color: Pan.caramelo.withValues(alpha: 0.75),
-                          width: 4,
-                          patterns: [PatternItem.dash(18), PatternItem.gap(10)],
-                        ),
-                      },
-                      zoomControlsEnabled: false,
-                      mapToolbarEnabled: false,
-                      myLocationButtonEnabled: false,
-                      // Para mover el mapa sin que se mueva la lista.
-                      gestureRecognizers: {
-                        Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-                      },
-                      onMapCreated: (c) {
-                        _map = c;
-                        Future.delayed(const Duration(milliseconds: 300), _fit);
-                      },
-                    ),
-            ),
+            child: map,
           ),
         ),
         const SizedBox(height: 8),
@@ -259,7 +294,7 @@ class _DayRouteMapState extends State<DayRouteMap> {
             padding: const EdgeInsets.only(top: 6),
             child: Text(
               '$missing ${missing == 1 ? 'pedido no tiene' : 'pedidos no tienen'} casa marcada '
-              '(van al final de su horario).',
+              '(van al final de su horario; puedes moverlos a mano).',
               style: theme.textTheme.bodySmall,
             ),
           ),
@@ -291,6 +326,14 @@ class _DayRouteMapState extends State<DayRouteMap> {
             ),
           ],
         ),
+        if (widget.onEdit != null) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: widget.onEdit,
+            icon: const Icon(Icons.edit_note_rounded, size: 18),
+            label: Text(widget.manual ? 'Cambiar el orden (acomodado a mano)' : 'Cambiar el orden'),
+          ),
+        ],
       ],
     );
   }
