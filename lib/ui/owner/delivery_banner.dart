@@ -106,24 +106,29 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
                 onPressed: _busy ? null : _stop,
               ),
             );
-          } else if (info.active) {
+          } else if (info.active && !_busy) {
             // La app se cerró a media ruta: el reparto quedó abierto.
+            // (Mientras arranca el reparto no se muestra, para no parpadear.)
             child = _box(
               key: const ValueKey('abierto'),
               color: const Color(0xFFFFF1CF),
               leading: const Icon(Icons.pause_circle_rounded, size: 34, color: Pan.caramelo),
               title: 'El reparto quedó abierto',
               subtitle: 'Tus clientes no ven tu ubicación ahorita.',
-              action: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  FilledButton(
-                    onPressed: _busy ? null : () => _start(resume: true),
-                    child: const Text('Seguir'),
-                  ),
-                  TextButton(onPressed: _busy ? null : _stop, child: const Text('Terminar')),
-                ],
+              // IntrinsicWidth: dentro de un Row el ancho no tiene límite y
+              // "stretch" sin él aplastaba el texto a una letra por renglón.
+              action: IntrinsicWidth(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton(
+                      onPressed: _busy ? null : () => _start(resume: true),
+                      child: const Text('Seguir'),
+                    ),
+                    TextButton(onPressed: _busy ? null : _stop, child: const Text('Terminar')),
+                  ],
+                ),
               ),
             );
           } else {
