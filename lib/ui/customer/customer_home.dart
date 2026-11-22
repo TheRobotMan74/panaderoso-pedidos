@@ -10,6 +10,7 @@ import '../../services/repo.dart';
 import '../../web/web_app_banner.dart';
 import '../format.dart';
 import '../product_image.dart';
+import '../promo_widgets.dart';
 import '../profile_page.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
@@ -288,7 +289,7 @@ class _Catalog extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
             itemCount: products.length + 1,
             itemBuilder: (context, i) {
-              if (i == 0) return FadeSlideIn(child: _Welcome(name: first));
+              if (i == 0) return FadeSlideIn(child: _Welcome(name: first, uid: user.uid));
               final p = products[i - 1];
               return FadeSlideIn(
                 index: i,
@@ -305,7 +306,8 @@ class _Catalog extends StatelessWidget {
 /// Saludo y banner de miel arriba del catálogo.
 class _Welcome extends StatelessWidget {
   final String name;
-  const _Welcome({required this.name});
+  final String uid;
+  const _Welcome({required this.name, required this.uid});
 
   @override
   Widget build(BuildContext context) {
@@ -363,6 +365,7 @@ class _Welcome extends StatelessWidget {
               ],
             ),
           ),
+          LoyaltyCardView(uid: uid),
           const _NextDayStock(),
           const SizedBox(height: 6),
           const SectionTitle('Nuestro pan'),

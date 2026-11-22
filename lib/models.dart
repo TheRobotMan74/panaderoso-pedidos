@@ -1,3 +1,4 @@
+import 'logic/promos.dart';
 import 'logic/shipping.dart';
 
 /// Rol del usuario dentro de la app.
@@ -200,12 +201,19 @@ class OrderItem {
   final double price;
   final int qty;
 
+  /// Pan regalado: 'lealtad' (tarjeta) o 'bienvenida' (primer pedido). Null = comprado.
+  /// Solo lo pone el servidor (functions/index.js → hacerPedido).
+  final String? gift;
+
   const OrderItem({
     required this.productId,
     required this.name,
     required this.price,
     required this.qty,
+    this.gift,
   });
+
+  bool get isGift => gift != null;
 
   double get total => price * qty;
 
@@ -214,6 +222,7 @@ class OrderItem {
         name: m['name'] as String? ?? '',
         price: (m['price'] as num?)?.toDouble() ?? 0,
         qty: (m['qty'] as num?)?.toInt() ?? 0,
+        gift: m['regalo'] as String?,
       );
 
   Map<String, dynamic> toMap() =>
@@ -250,6 +259,9 @@ class BakeryOrder {
   final String? movedFromDate;
   final String? movedFromSlot;
 
+  /// Piezas compradas que cuentan para la tarjeta de lealtad. Solo lo traen los
+  /// pedidos hechos desde que salió la promoción (null en los de antes).
+  final int? loyaltyPieces;
   /// Duración del horario en minutos (la pone el servidor al pedir o mover; antes siempre era 60).
   final int slotMinutes;
   final int movedFromMinutes;
@@ -277,6 +289,7 @@ class BakeryOrder {
     this.nearNotified = false,
     this.movedFromDate,
     this.movedFromSlot,
+    this.loyaltyPieces,
     this.slotMinutes = 60,
     this.movedFromMinutes = 60,
   });
@@ -288,7 +301,16 @@ class BakeryOrder {
   /// Pendiente de entregar (ni entregado ni cancelado).
   bool get isPending => status != OrderStatus.entregado && status != OrderStatus.cancelado;
 
+  /// Todas las piezas que hay que hornear y llevar (con las regaladas).
   int get pieces => items.fold(0, (s, i) => s + i.qty);
+
+  /// Piezas que el cliente compró (sin las regaladas).
+  int get paidPieces => items.where((i) => !i.isGift).fold(0, (s, i) => s + i.qty);
+
+  /// Piezas regaladas de un tipo ([giftLoyalty] o [giftWelcome]), o de todos si es null.
+  int giftCount([String? kind]) => items
+      .where((i) => i.isGift && (kind == null || i.gift == kind))
+      .fold(0, (s, i) => s + i.qty);
   double get subtotal => items.fold(0.0, (s, i) => s + i.total);
   double get total => subtotal + shippingFee;
 
@@ -319,6 +341,7 @@ class BakeryOrder {
         nearNotified: m['nearNotified'] as bool? ?? false,
         movedFromDate: (m['movedFrom'] as Map?)?['date'] as String?,
         movedFromSlot: (m['movedFrom'] as Map?)?['slot'] as String?,
+        loyaltyPieces: (m['lealtadPiezas'] as num?)?.toInt(),
         slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
         movedFromMinutes: ((m['movedFrom'] as Map?)?['slotMinutes'] as num?)?.toInt() ?? 60,
       );
@@ -369,6 +392,9 @@ class AppConfig {
   /// true = al terminar regresas al punto de salida (la ruta lo toma en cuenta).
   final bool routeReturn;
 
+  /// Tarjeta de lealtad y pan de bienvenida.
+  final PromoRules promos;
+
   const AppConfig({
     this.bankName = '',
     this.clabe = '',
@@ -379,6 +405,7 @@ class AppConfig {
     this.baseLat,
     this.baseLng,
     this.routeReturn = true,
+    this.promos = const PromoRules(),
   });
 
   factory AppConfig.fromMap(Map<String, dynamic>? m) => AppConfig(
@@ -392,6 +419,8 @@ class AppConfig {
         baseLat: (m?['baseLat'] as num?)?.toDouble(),
         baseLng: (m?['baseLng'] as num?)?.toDouble(),
         routeReturn: m?['routeReturn'] as bool? ?? true,
+        promos: PromoRules.fromMap(
+            m?['promos'] == null ? null : Map<String, dynamic>.from(m!['promos'] as Map)),
       );
 
   Map<String, dynamic> toMap() => {
@@ -404,6 +433,7 @@ class AppConfig {
         'baseLat': baseLat,
         'baseLng': baseLng,
         'routeReturn': routeReturn,
+        'promos': promos.toMap(),
       };
 }
 

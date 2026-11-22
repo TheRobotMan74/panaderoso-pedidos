@@ -8,6 +8,7 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../product_image.dart';
+import '../promo_widgets.dart';
 import '../status_chip.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -553,11 +554,13 @@ class _OrderCard extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFFFF4D6),
+                            color: it.isGift ? Pan.salviaClara : const Color(0xFFFFF4D6),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
-                            '${productArt(it.name).$1} ${it.qty} ${it.name}',
+                            it.isGift
+                                ? '🎁 ${it.qty} ${it.name} gratis (${GiftTag.label(it.gift).toLowerCase()})'
+                                : '${productArt(it.name).$1} ${it.qty} ${it.name}',
                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                           ),
                         ),

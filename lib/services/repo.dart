@@ -173,9 +173,15 @@ class Repo {
   /// Hace el pedido en el servidor: ahí se revisa y se aparta el cupo en un solo
   /// paso, así dos personas pidiendo al mismo tiempo no pueden pasarse del cupo.
   /// Si ya no alcanza, lanza [RejectedByServer] con el motivo para el cliente.
-  Future<void> createOrder(BakeryOrder o) async {
+  /// Regresa cuántos panes gratis le puso el servidor al pedido.
+  Future<int> createOrder(BakeryOrder o) async {
     try {
-      await FirebaseFunctions.instance.httpsCallable('hacerPedido').call<void>(o.toNewOrderMap());
+      final r = await FirebaseFunctions.instance
+          .httpsCallable('hacerPedido')
+          .call<Object?>(o.toNewOrderMap());
+      final regalos = (r.data as Map?)?['regalos'];
+      if (regalos is! Map) return 0;
+      return regalos.values.whereType<num>().fold<int>(0, (s, n) => s + n.toInt());
     } on FirebaseFunctionsException catch (e) {
       if (const ['resource-exhausted', 'failed-precondition', 'invalid-argument'].contains(e.code)) {
         throw RejectedByServer(e.message ?? 'Ya no hay cupo para ese día.');
@@ -204,6 +210,13 @@ class Repo {
       .where('customerId', isEqualTo: uid)
       .orderBy('createdAt', descending: true)
       .limit(50)
+      .snapshots()
+      .map(_toOrders);
+
+  /// Todos los pedidos del cliente, para su tarjeta de lealtad.
+  Stream<List<BakeryOrder>> myOrdersAll(String uid) => _db
+      .collection('orders')
+      .where('customerId', isEqualTo: uid)
       .snapshots()
       .map(_toOrders);
 

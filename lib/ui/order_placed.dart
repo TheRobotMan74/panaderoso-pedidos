@@ -6,7 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'theme.dart';
 
 /// Festejo al mandar el pedido: palomita que se dibuja y chispitas de miel.
-Future<void> showOrderPlaced(BuildContext context) {
+/// [gift]: texto del pan gratis que le tocó (por ejemplo "1 Chocolatín"), si hay.
+Future<void> showOrderPlaced(BuildContext context, {String? gift}) {
   HapticFeedback.mediumImpact();
   return showGeneralDialog<void>(
     context: context,
@@ -14,7 +15,7 @@ Future<void> showOrderPlaced(BuildContext context) {
     barrierLabel: 'Cerrar',
     barrierColor: const Color(0x993B2A1E),
     transitionDuration: Motion.of(context, const Duration(milliseconds: 380)),
-    pageBuilder: (_, _, _) => const _OrderPlaced(),
+    pageBuilder: (_, _, _) => _OrderPlaced(gift: gift),
     transitionBuilder: (context, a, _, child) {
       final c = CurvedAnimation(parent: a, curve: Motion.rebote, reverseCurve: Curves.easeIn);
       return FadeTransition(
@@ -26,7 +27,8 @@ Future<void> showOrderPlaced(BuildContext context) {
 }
 
 class _OrderPlaced extends StatefulWidget {
-  const _OrderPlaced();
+  final String? gift;
+  const _OrderPlaced({this.gift});
 
   @override
   State<_OrderPlaced> createState() => _OrderPlacedState();
@@ -87,6 +89,21 @@ class _OrderPlacedState extends State<_OrderPlaced> with SingleTickerProviderSta
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodyMedium!.copyWith(color: Pan.canela),
               ),
+              if (widget.gift != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Pan.salviaClara,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Text(
+                    '🎁 Te regalamos ${widget.gift}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF3F6B33)),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
