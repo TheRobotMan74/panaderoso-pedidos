@@ -130,6 +130,14 @@ class Repo {
     }
   }
 
+  /// Guarda el orden de entrega acomodado a mano. Una lista vacía lo borra
+  /// y la app vuelve a armar la ruta sola.
+  Future<void> saveRouteOrder(String date, List<String> orderIds) =>
+      _db.collection('deliveryDays').doc(date).set(
+        {'routeOrder': orderIds.isEmpty ? FieldValue.delete() : orderIds},
+        SetOptions(merge: true),
+      );
+
   Future<void> deleteDeliveryDay(String date) =>
       _db.collection('deliveryDays').doc(date).delete();
 
@@ -247,6 +255,10 @@ class Repo {
 
   Future<void> updateTrackingViewers(List<String> viewers) =>
       _tracking.update({'viewers': viewers});
+
+  /// Cuántas entregas faltan antes de la de cada cliente (lo ve en su mapa).
+  Future<void> updateTrackingAhead(Map<String, int> ahead) =>
+      _tracking.update({'ahead': ahead});
 
   /// Termina el reparto y borra la ubicación.
   Future<void> stopTracking() => _tracking.set({

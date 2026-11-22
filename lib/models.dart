@@ -129,6 +129,11 @@ class DeliveryDay {
   /// Un grupo que no aparece no tiene límite.
   final Map<String, int> stock;
 
+  /// Orden de entrega que el dueño acomodó a mano (ids de pedidos).
+  /// Vacío = la app arma la ruta sola. No va en [toMap] para que guardar
+  /// el día desde el calendario no lo borre.
+  final List<String> routeOrder;
+
   const DeliveryDay({
     required this.date,
     required this.open,
@@ -136,6 +141,7 @@ class DeliveryDay {
     this.slotMinutes = 60,
     this.closed = false,
     this.stock = const {},
+    this.routeOrder = const [],
   });
 
   factory DeliveryDay.fromMap(String id, Map<String, dynamic> m) => DeliveryDay(
@@ -145,6 +151,7 @@ class DeliveryDay {
         slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
         closed: m['closed'] as bool? ?? false,
         stock: _intMap(m['stock']),
+        routeOrder: List<String>.from(m['routeOrder'] as List? ?? const []),
       );
 
   Map<String, dynamic> toMap() => {
@@ -351,6 +358,9 @@ class AppConfig {
   final double? baseLat;
   final double? baseLng;
 
+  /// true = al terminar regresas al punto de salida (la ruta lo toma en cuenta).
+  final bool routeReturn;
+
   const AppConfig({
     this.bankName = '',
     this.clabe = '',
@@ -360,6 +370,7 @@ class AppConfig {
     this.nearAlertMeters = 1000,
     this.baseLat,
     this.baseLng,
+    this.routeReturn = true,
   });
 
   factory AppConfig.fromMap(Map<String, dynamic>? m) => AppConfig(
@@ -372,6 +383,7 @@ class AppConfig {
         nearAlertMeters: (m?['nearAlertMeters'] as num?)?.toInt() ?? 1000,
         baseLat: (m?['baseLat'] as num?)?.toDouble(),
         baseLng: (m?['baseLng'] as num?)?.toDouble(),
+        routeReturn: m?['routeReturn'] as bool? ?? true,
       );
 
   Map<String, dynamic> toMap() => {
@@ -383,6 +395,7 @@ class AppConfig {
         'nearAlertMeters': nearAlertMeters,
         'baseLat': baseLat,
         'baseLng': baseLng,
+        'routeReturn': routeReturn,
       };
 }
 
@@ -399,6 +412,10 @@ class TrackingInfo {
   /// Clientes con pedido pendiente ese día: solo ellos pueden ver el mapa.
   final List<String> viewers;
 
+  /// Cuántas entregas faltan antes de la de cada cliente (por uid), según el
+  /// orden de la ruta del dueño. 0 = es el siguiente.
+  final Map<String, int> ahead;
+
   const TrackingInfo({
     this.active = false,
     this.lat,
@@ -406,6 +423,7 @@ class TrackingInfo {
     this.updatedAt,
     this.date = '',
     this.viewers = const [],
+    this.ahead = const {},
   });
 
   bool get hasPosition => lat != null && lng != null;
@@ -417,6 +435,7 @@ class TrackingInfo {
         updatedAt: _toDate(m?['updatedAt']),
         date: m?['date'] as String? ?? '',
         viewers: List<String>.from(m?['viewers'] as List? ?? const []),
+        ahead: _intMap(m?['ahead']),
       );
 }
 

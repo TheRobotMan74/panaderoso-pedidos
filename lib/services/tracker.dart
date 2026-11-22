@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
+import '../logic/day_route.dart';
 import '../logic/schedule.dart';
 import '../models.dart';
 import 'repo.dart';
@@ -23,8 +24,16 @@ class DeliveryTracker extends ChangeNotifier {
 
   StreamSubscription<Position>? _positions;
   StreamSubscription<List<BakeryOrder>>? _orders;
+  StreamSubscription<AppConfig>? _config;
+  StreamSubscription<List<DeliveryDay>>? _days;
   DateTime _lastWrite = DateTime(2000);
   List<String> _viewers = [];
+
+  // Para decirle a cada cliente cuántas entregas van antes de la suya.
+  List<BakeryOrder> _todayOrders = [];
+  AppConfig _cfg = const AppConfig();
+  DeliveryDay? _day;
+  Map<String, int> _ahead = {};
 
   /// Se llama cuando el reparto termina solo (ya no quedan pedidos del día).
   void Function(String message)? onAutoStop;
@@ -98,7 +107,17 @@ class DeliveryTracker extends ChangeNotifier {
     ).listen(_onPosition, onError: (_) {});
 
     // Si se entregan o cancelan pedidos, se actualiza quién puede ver el mapa.
+    _config = Repo.instance.config().listen((c) {
+      _cfg = c;
+      _updateAhead();
+    }, onError: (_) {});
+    _days = Repo.instance.deliveryDays(fromDate: today).listen((days) {
+      _day = days.where((d) => d.date == today).firstOrNull;
+      _updateAhead();
+    }, onError: (_) {});
     _orders = Repo.instance.ordersFrom(today).listen((orders) {
+      _todayOrders = orders.where((o) => o.deliveryDate == today && o.status != OrderStatus.cancelado).toList();
+      _updateAhead();
       final viewers = _viewersOf(_pendingOn(orders, today));
       if (viewers.isEmpty) {
         stop().then((_) => onAutoStop?.call(
@@ -124,6 +143,16 @@ class DeliveryTracker extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Recalcula, con el orden de la ruta del dueño, cuántas entregas faltan
+  /// antes de la de cada cliente, y lo manda solo si cambió.
+  void _updateAhead() {
+    if (_todayOrders.isEmpty) return;
+    final ahead = aheadByCustomer(dayRoute(_todayOrders, _cfg, day: _day));
+    if (mapEquals(ahead, _ahead)) return;
+    _ahead = ahead;
+    Repo.instance.updateTrackingAhead(ahead).catchError((_) {});
+  }
+
   void _onPosition(Position p) {
     final now = DateTime.now();
     if (now.difference(_lastWrite) < _minWriteGap) return;
@@ -134,8 +163,14 @@ class DeliveryTracker extends ChangeNotifier {
   Future<void> stop() async {
     await _positions?.cancel();
     await _orders?.cancel();
+    await _config?.cancel();
+    await _days?.cancel();
     _positions = null;
     _orders = null;
+    _config = null;
+    _days = null;
+    _ahead = {};
+    _todayOrders = [];
     notifyListeners();
     await Repo.instance.stopTracking();
   }
