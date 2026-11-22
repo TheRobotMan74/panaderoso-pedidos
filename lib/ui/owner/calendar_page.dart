@@ -149,7 +149,7 @@ class _DayTile extends StatelessWidget {
     if (day.slots.isEmpty) return 'Sin horarios';
     final first = slotLabel(day.slots.first, minutes: day.slotMinutes).split(' a ').first;
     final last = slotLabel(day.slots.last, minutes: day.slotMinutes).split(' a ').last;
-    return '$first a $last';
+    return day.slotMinutes == 60 ? '$first a $last' : '$first a $last · cada ${day.slotMinutes} min';
   }
 
   void _editStock(BuildContext context) => showModalBottomSheet<void>(
@@ -594,10 +594,11 @@ class _MoveDaySheet extends StatefulWidget {
 
 class _MoveDaySheetState extends State<_MoveDaySheet> {
   late String _date = widget.day.date;
-  late int _startHour = widget.day.slots.isEmpty ? 8 : int.parse(widget.day.slots.first.split(':')[0]);
-  late int _endHour = widget.day.slots.isEmpty
-      ? 11
-      : int.parse(widget.day.slots.last.split(':')[0]) + (widget.day.slotMinutes / 60).ceil();
+  late int _every = slotLengths.contains(widget.day.slotMinutes) ? widget.day.slotMinutes : 60;
+  late int _start = _nearestChoice(widget.day.slots.isEmpty ? 8 * 60 : slotMinute(widget.day.slots.first));
+  late int _end = _nearestChoice(widget.day.slots.isEmpty
+      ? 11 * 60
+      : slotMinute(widget.day.slots.last) + widget.day.slotMinutes);
   bool _busy = false;
 
   /// Hoy y los próximos 4 semanas.
@@ -614,7 +615,8 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
       final told = await Repo.instance.moveDeliveryDay(
         from: widget.day.date,
         to: _date,
-        slots: hourlySlots(_startHour, _endHour),
+        slots: slotsBetween(_start, _end, _every),
+        slotMinutes: _every,
       );
       if (!mounted) return;
       Navigator.pop(context);
@@ -630,26 +632,15 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
     }
   }
 
-  Widget _hourPicker(String label, int value, ValueChanged<int> onChanged) => Row(
-        children: [
-          Expanded(child: Text(label)),
-          DropdownButton<int>(
-            value: value,
-            items: [
-              for (var h = 5; h <= 22; h++) DropdownMenuItem(value: h, child: Text('$h:00')),
-            ],
-            onChanged: (v) => setState(() => onChanged(v!)),
-          ),
-        ],
-      );
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dates = _dates;
-    final newSlots = hourlySlots(_startHour, _endHour);
-    final changed = _date != widget.day.date || newSlots.join() != widget.day.slots.join();
-    final valid = _endHour > _startHour && !_taken(_date) && changed;
+    final newSlots = slotsBetween(_start, _end, _every);
+    final changed = _date != widget.day.date ||
+        newSlots.join() != widget.day.slots.join() ||
+        _every != widget.day.slotMinutes;
+    final valid = newSlots.isNotEmpty && !_taken(_date) && changed;
     final n = widget.pendingOrders;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
@@ -706,8 +697,16 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
             ),
           ),
           const SizedBox(height: 10),
-          _hourPicker('Primera entrega desde', _startHour, (v) => _startHour = v),
-          _hourPicker('Última entrega hasta', _endHour, (v) => _endHour = v),
+          _SlotPicker(
+            start: _start,
+            end: _end,
+            every: _every,
+            onChanged: (start, end, every) => setState(() {
+              _start = start;
+              _end = end;
+              _every = every;
+            }),
+          ),
           const SizedBox(height: 6),
           Text(
             n == 0
@@ -743,8 +742,9 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
   static const _weekdayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
   final Set<int> _weekdays = {DateTime.monday, DateTime.wednesday, DateTime.friday};
   int _weeks = 1;
-  int _startHour = 8;
-  int _endHour = 11;
+  int _start = 8 * 60;
+  int _end = 11 * 60;
+  int _every = 60;
   bool _busy = false;
   late final _stock = {for (final g in widget.groups) g.key: TextEditingController()};
 
@@ -773,33 +773,18 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
       await Repo.instance.saveDeliveryDay(DeliveryDay(
         date: date,
         open: true,
-        slots: hourlySlots(_startHour, _endHour),
+        slots: slotsBetween(_start, _end, _every),
+        slotMinutes: _every,
       ));
       if (stock.isNotEmpty) await Repo.instance.setDayStock(date, stock);
     }
     if (mounted) Navigator.pop(context);
   }
 
-  Widget _hourPicker(String label, int value, ValueChanged<int> onChanged,
-      {int min = 5, int max = 22}) {
-    return Row(
-      children: [
-        Expanded(child: Text(label)),
-        DropdownButton<int>(
-          value: value,
-          items: [
-            for (var h = min; h <= max; h++) DropdownMenuItem(value: h, child: Text('$h:00')),
-          ],
-          onChanged: (v) => setState(() => onChanged(v!)),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final dates = _dates;
-    final valid = _endHour > _startHour && dates.isNotEmpty;
+    final valid = slotsBetween(_start, _end, _every).isNotEmpty && dates.isNotEmpty;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
@@ -835,8 +820,16 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
                 ),
               ],
             ),
-            _hourPicker('Primera entrega desde', _startHour, (v) => _startHour = v),
-            _hourPicker('Última entrega hasta', _endHour, (v) => _endHour = v),
+            _SlotPicker(
+              start: _start,
+              end: _end,
+              every: _every,
+              onChanged: (start, end, every) => setState(() {
+                _start = start;
+                _end = end;
+                _every = every;
+              }),
+            ),
             if (widget.groups.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text('Cupo de panes por día (opcional)', style: Theme.of(context).textTheme.titleSmall),
@@ -847,7 +840,7 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
             Text(
               dates.isEmpty
                   ? 'Elige al menos un día.'
-                  : 'Se abren ${dates.length} días, en horarios de una hora. '
+                  : 'Se abren ${dates.length} días. '
                       'Se puede pedir hasta que empieces a repartir o se acabe el cupo.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -861,6 +854,76 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Redondea a la hora elegible más cercana (cuartos de hora de 5:00 a 22:00).
+int _nearestChoice(int minutes) =>
+    dayTimeChoices.reduce((a, b) => (a - minutes).abs() <= (b - minutes).abs() ? a : b);
+
+/// Hora de inicio, hora final y cada cuánto hay horario (15, 30 o 60 minutos),
+/// con una vista previa de los horarios que van a ver los clientes.
+class _SlotPicker extends StatelessWidget {
+  final int start;
+  final int end;
+  final int every;
+  final void Function(int start, int end, int every) onChanged;
+  const _SlotPicker({required this.start, required this.end, required this.every, required this.onChanged});
+
+  Widget _time(String label, int value, ValueChanged<int> pick) => Row(
+        children: [
+          Expanded(child: Text(label)),
+          DropdownButton<int>(
+            value: value,
+            menuMaxHeight: 320,
+            items: [
+              for (final m in dayTimeChoices) DropdownMenuItem(value: m, child: Text(clockLabel(m))),
+            ],
+            onChanged: (v) => pick(v!),
+          ),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final slots = slotsBetween(start, end, every);
+    final String preview;
+    if (end <= start) {
+      preview = 'La última entrega tiene que ser después de la primera.';
+    } else if (slots.isEmpty) {
+      preview = 'No cabe ni un horario de $every min. Amplía las horas o elige horarios más cortos.';
+    } else {
+      final labels = [for (final s in slots) clockLabel(slotMinute(s))];
+      final shown = labels.length <= 8 ? labels.join(', ') : '${labels.take(6).join(', ')} … ${labels.last}';
+      final last = slotMinute(slots.last) + every;
+      preview = '${slots.length} ${slots.length == 1 ? 'horario' : 'horarios'} de $every min: $shown'
+          '${last < end ? ' (lo último que no cabe completo se queda fuera)' : ''}.';
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _time('Primera entrega desde', start, (v) => onChanged(v, end, every)),
+        _time('Última entrega hasta', end, (v) => onChanged(start, v, every)),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            const Expanded(child: Text('Cada horario dura')),
+            SegmentedButton<int>(
+              showSelectedIcon: false,
+              segments: [
+                for (final m in slotLengths)
+                  ButtonSegment(value: m, label: Text(m == 60 ? '1 hora' : '$m min')),
+              ],
+              selected: {every},
+              onSelectionChanged: (s) => onChanged(start, end, s.first),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text(preview, style: theme.textTheme.bodySmall),
+      ],
     );
   }
 }

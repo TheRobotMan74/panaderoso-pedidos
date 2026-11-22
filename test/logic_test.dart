@@ -77,6 +77,17 @@ void main() {
     test('horarios de una hora de 8 a 11', () {
       expect(hourlySlots(8, 11), ['08:00', '09:00', '10:00']);
       expect(slotLabel('08:00'), '8:00 a 9:00');
+      expect(slotsBetween(8 * 60, 9 * 60, 15), ['08:00', '08:15', '08:30', '08:45']);
+      expect(slotsBetween(8 * 60 + 30, 10 * 60, 30), ['08:30', '09:00', '09:30']);
+      expect(slotsBetween(8 * 60, 9 * 60 + 45, 60), ['08:00']); // 9:00 a 10:00 no cabe
+      expect(slotsBetween(9 * 60, 8 * 60, 15), isEmpty);
+      expect(slotLabel('08:45', minutes: 15), '8:45 a 9:00');
+      expect(slotLabel('09:30', minutes: 30), '9:30 a 10:00');
+      expect(slotMinute('08:15'), 495);
+      expect(slotKey(495), '08:15');
+      // El orden de texto sigue siendo el orden de la hora, también con cuartos.
+      final mixed = ['10:00', '08:45', '09:15', '08:15']..sort();
+      expect(mixed, ['08:15', '08:45', '09:15', '10:00']);
     });
 
     test('se puede pedir hasta que empieza el reparto, sin hora límite', () {

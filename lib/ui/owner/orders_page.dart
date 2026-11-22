@@ -200,7 +200,7 @@ class _OrdersPageState extends State<OrdersPage> {
                           const Icon(Icons.schedule_rounded, size: 14, color: Pan.tostado),
                           const SizedBox(width: 4),
                           Text(
-                            slotLabel(o.slot),
+                            slotLabel(o.slot, minutes: o.slotMinutes),
                             style: const TextStyle(fontWeight: FontWeight.w800, color: Pan.tostado),
                           ),
                         ],
@@ -496,7 +496,7 @@ class _OrderCard extends StatelessWidget {
     final next = _next[o.status];
     final moved = o.wasMoved
         ? 'Movido del ${dayLabel(o.movedFromDate!)}'
-            '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!)}'}'
+            '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!, minutes: o.movedFromMinutes)}'}'
         : null;
     final isCash = o.paymentMethod == PaymentMethod.efectivo;
     final (accent, _, _) = statusStyle(o.status);

@@ -72,7 +72,7 @@ class _OrderCard extends StatelessWidget {
   Future<void> _openWhatsApp(BuildContext context) async {
     final o = order;
     final text = 'Hola Panaderoso 🐻, soy ${o.customerName}. Te escribo por mi pedido del '
-        '${dayLabel(o.deliveryDate)} (${slotLabel(o.slot)}).';
+        '${dayLabel(o.deliveryDate)} (${slotLabel(o.slot, minutes: o.slotMinutes)}).';
     final ok = await launchUrl(whatsAppUrl(whatsapp, text), mode: LaunchMode.externalApplication)
         .catchError((_) => false);
     if (!ok && context.mounted) {
@@ -108,7 +108,7 @@ class _OrderCard extends StatelessWidget {
                       children: [
                         const Icon(Icons.schedule_rounded, size: 15, color: Pan.canela),
                         const SizedBox(width: 4),
-                        Text(slotLabel(o.slot), style: theme.textTheme.bodySmall),
+                        Text(slotLabel(o.slot, minutes: o.slotMinutes), style: theme.textTheme.bodySmall),
                       ],
                     ),
                   ],
@@ -216,7 +216,7 @@ class _MovedNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final o = order;
     final before = '${dayLabel(o.movedFromDate!)}'
-        '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!)}'}';
+        '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!, minutes: o.movedFromMinutes)}'}';
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -236,7 +236,7 @@ class _MovedNotice extends StatelessWidget {
                     style: TextStyle(fontWeight: FontWeight.w800, color: Pan.cielo)),
                 const SizedBox(height: 2),
                 Text(
-                  'Ahora llega el ${dayLabel(o.deliveryDate)}, de ${slotLabel(o.slot)}. '
+                  'Ahora llega el ${dayLabel(o.deliveryDate)}, de ${slotLabel(o.slot, minutes: o.slotMinutes)}. '
                   'Antes era el $before.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

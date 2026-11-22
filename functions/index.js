@@ -316,6 +316,7 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
       total: subtotal + shippingFee,
       deliveryDate: date,
       slot: d.slot,
+      slotMinutes: Number(day.get('slotMinutes')) || 60,
       paymentMethod: d.paymentMethod,
       paymentProofPath: proof,
       paymentVerified: false,
@@ -441,10 +442,14 @@ exports.moverDia = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => 
   const { from, to } = req.data || {};
   const slots = Array.isArray(req.data && req.data.slots) ? req.data.slots : [];
   const slotMinutes = Number((req.data && req.data.slotMinutes) || 60);
+  if (![15, 30, 60].includes(slotMinutes)) {
+    throw new HttpsError('invalid-argument', 'Cada horario dura 15, 30 o 60 minutos.');
+  }
   if (!DIA_RE.test(String(from)) || !DIA_RE.test(String(to))) {
     throw new HttpsError('invalid-argument', 'Fecha no válida.');
   }
-  if (slots.length === 0 || slots.length > 24 || !slots.every((s) => HORA_RE.test(String(s)))) {
+  // De 5:00 a 22:00 en cuartos de hora caben hasta 68 horarios.
+  if (slots.length === 0 || slots.length > 96 || !slots.every((s) => HORA_RE.test(String(s)))) {
     throw new HttpsError('invalid-argument', 'Elige el horario del día.');
   }
   slots.sort();
@@ -468,6 +473,7 @@ exports.moverDia = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => 
     }
 
     const antes = dia.get('slots') || [];
+    const minutosAntes = Number(dia.get('slotMinutes')) || 60;
     const nuevo = { ...dia.data(), slots, slotMinutes };
     if (from !== to) {
       tx.set(toRef, nuevo);
@@ -478,12 +484,18 @@ exports.moverDia = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => 
 
     for (const o of pedidos.docs) {
       const slot = horarioNuevo(o.get('slot'), antes, slots);
-      if (from === to && slot === o.get('slot')) continue;
+      if (from === to && slot === o.get('slot') && minutosAntes === slotMinutes) continue;
+      if (from === to && slot === o.get('slot')) {
+        // Mismo horario de inicio, solo cambió cuánto dura: no hace falta avisar.
+        tx.update(o.ref, { slotMinutes });
+        continue;
+      }
       tx.update(o.ref, {
         deliveryDate: to,
         slot,
+        slotMinutes,
         // Lo que ve el cliente en su pedido: "Tu entrega se movió".
-        movedFrom: { date: from, slot: o.get('slot') },
+        movedFrom: { date: from, slot: o.get('slot'), slotMinutes: minutosAntes },
         movedAt: FieldValue.serverTimestamp(),
       });
       if (PENDIENTES.includes(o.get('status'))) {

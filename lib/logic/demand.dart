@@ -17,7 +17,10 @@ class DayDemand {
   final List<SlotDemand> slots;
   final Map<String, int> totalByProduct;
 
-  DayDemand(this.date, this.slots, this.totalByProduct);
+  /// Duración de cada horario del día, en minutos.
+  final int slotMinutes;
+
+  DayDemand(this.date, this.slots, this.totalByProduct, {this.slotMinutes = 60});
 
   int get orders => slots.fold(0, (a, s) => a + s.orders);
   int get pieces => totalByProduct.values.fold(0, (a, b) => a + b);
@@ -25,7 +28,8 @@ class DayDemand {
 
 /// Junta los pedidos de un día. Los cancelados no cuentan.
 /// [slotOrder] fija el orden de los horarios publicados (los vacíos también salen).
-DayDemand demandForDay(String date, List<BakeryOrder> orders, {List<String> slotOrder = const []}) {
+DayDemand demandForDay(String date, List<BakeryOrder> orders,
+    {List<String> slotOrder = const [], int slotMinutes = 60}) {
   final bySlot = <String, SlotDemand>{for (final s in slotOrder) s: SlotDemand(s)};
   final total = <String, int>{};
   for (final o in orders) {
@@ -38,5 +42,5 @@ DayDemand demandForDay(String date, List<BakeryOrder> orders, {List<String> slot
     }
   }
   final slots = bySlot.values.toList()..sort((a, b) => a.slot.compareTo(b.slot));
-  return DayDemand(date, slots, total);
+  return DayDemand(date, slots, total, slotMinutes: slotMinutes);
 }
