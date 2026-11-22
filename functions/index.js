@@ -2,10 +2,15 @@
 // - Pedido nuevo → aviso al dueño (tema "dueno").
 // - Cambio de estado → aviso al cliente que hizo el pedido.
 // - Repartidor cerca → aviso al cliente (una sola vez por pedido).
-const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+// Cupos de pan por día:
+// - hacerPedido: el cliente pide por aquí; se revisa el cupo y se aparta en un solo paso.
+// - recontarCupo*: cuando un pedido se cancela, se borra o cambia, se recuenta el día.
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentDeleted } = require('firebase-functions/v2/firestore');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
+const { getStorage } = require('firebase-admin/storage');
 
 initializeApp();
 
@@ -104,3 +109,309 @@ function distanciaMetros(lat1, lng1, lat2, lng2) {
     + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
   return 2 * 6371000 * Math.asin(Math.sqrt(a));
 }
+
+// ---------------------------------------------------------------------------
+// Cupos de pan por día
+// ---------------------------------------------------------------------------
+// deliveryDays/{fecha}.stock = { llave: límite }   ← lo pone el dueño
+// dayStock/{fecha}.used      = { llave: apartados } ← solo lo escribe el servidor
+// La llave junta los productos de la misma masa. Igual que lib/logic/stock.dart.
+function stockKey(productId, product) {
+  const g = String((product && product.stockGroup) || '').trim().toLowerCase();
+  return g ? `g:${g}` : `p:${productId}`;
+}
+
+function stockLabel(productId, product) {
+  const g = String((product && product.stockGroup) || '').trim();
+  return g || (product && product.name) || 'ese producto';
+}
+
+const texto = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+const numeroONull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+
+// El cliente hace su pedido. Todo pasa dentro de una transacción: si dos personas
+// piden los últimos panes al mismo tiempo, solo una se los lleva.
+exports.hacerPedido = onCall(async (req) => {
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Inicia sesión para hacer tu pedido.');
+  const d = req.data || {};
+
+  const date = d.deliveryDate;
+  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new HttpsError('invalid-argument', 'Falta el día de entrega.');
+  }
+  if (!['transferencia', 'efectivo'].includes(d.paymentMethod)) {
+    throw new HttpsError('invalid-argument', 'Forma de pago no válida.');
+  }
+  const pedidos = Array.isArray(d.items) ? d.items : [];
+  const qtyById = {};
+  for (const it of pedidos) {
+    const qty = Number(it && it.qty);
+    if (!it || typeof it.productId !== 'string' || !it.productId || !Number.isInteger(qty) || qty < 1 || qty > 500) {
+      throw new HttpsError('invalid-argument', 'Revisa las cantidades de tu pedido.');
+    }
+    qtyById[it.productId] = (qtyById[it.productId] || 0) + qty;
+  }
+  const ids = Object.keys(qtyById);
+  if (ids.length === 0 || ids.length > 30) throw new HttpsError('invalid-argument', 'Tu carrito está vacío.');
+
+  let proof = d.paymentProofPath;
+  if (typeof proof !== 'string' || !proof.startsWith(`payment-proofs/${uid}/`)) proof = null;
+
+  const db = getFirestore();
+  const dayRef = db.collection('deliveryDays').doc(date);
+  const stockRef = db.collection('dayStock').doc(date);
+  const orderRef = db.collection('orders').doc();
+
+  await db.runTransaction(async (tx) => {
+    const day = await tx.get(dayRef);
+    if (!day.exists || day.get('open') !== true || day.get('closed') === true) {
+      throw new HttpsError('failed-precondition', 'Ese día ya no recibe pedidos. Elige otro día.');
+    }
+    // Se puede pedir hasta que termina el día en México (00:00 UTC + 30 h).
+    const [y, m, dd] = date.split('-').map(Number);
+    if (Date.now() >= Date.UTC(y, m - 1, dd) + 30 * 3600 * 1000) {
+      throw new HttpsError('failed-precondition', 'Ese día ya pasó. Elige otro día.');
+    }
+    const slots = day.get('slots') || [];
+    if (!slots.includes(d.slot)) throw new HttpsError('failed-precondition', 'Ese horario ya no está disponible.');
+
+    const prods = await tx.getAll(...ids.map((id) => db.collection('products').doc(id)));
+    const stock = await tx.get(stockRef);
+
+    // Nombre y precio salen del catálogo, no del celular.
+    const items = [];
+    const need = {};
+    const labels = {};
+    for (const p of prods) {
+      const pd = p.data();
+      if (!p.exists || pd.available === false) {
+        throw new HttpsError('failed-precondition',
+          `${(pd && pd.name) || 'Un producto'} ya no está disponible. Quítalo de tu carrito.`);
+      }
+      const qty = qtyById[p.id];
+      items.push({ productId: p.id, name: pd.name || '', price: Number(pd.price) || 0, qty });
+      const key = stockKey(p.id, pd);
+      need[key] = (need[key] || 0) + qty;
+      labels[key] = stockLabel(p.id, pd);
+    }
+
+    const limits = day.get('stock') || {};
+    const used = { ...(stock.get('used') || {}) };
+    for (const [key, qty] of Object.entries(need)) {
+      const limit = limits[key];
+      if (typeof limit === 'number') {
+        const left = Math.max(0, limit - (used[key] || 0));
+        if (qty > left) {
+          throw new HttpsError('resource-exhausted', left === 0
+            ? `Ya no quedan panes de ${labels[key]} para ese día. Prueba otro día.`
+            : `Solo quedan ${left} de ${labels[key]} para ese día. Ajusta tu pedido.`);
+        }
+      }
+      used[key] = (used[key] || 0) + qty;
+    }
+
+    const pieces = items.reduce((s, i) => s + i.qty, 0);
+    const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+    const shippingFee = Math.max(0, Math.min(10000, Math.round(Number(d.shippingFee) || 0)));
+
+    tx.set(stockRef, { used, updatedAt: FieldValue.serverTimestamp() });
+    tx.create(orderRef, {
+      customerId: uid,
+      customerName: texto(d.customerName, 120),
+      phone: texto(d.phone, 40),
+      address: texto(d.address, 300),
+      addressNotes: texto(d.addressNotes, 300),
+      items,
+      pieces,
+      subtotal,
+      shippingFee,
+      total: subtotal + shippingFee,
+      deliveryDate: date,
+      slot: d.slot,
+      paymentMethod: d.paymentMethod,
+      paymentProofPath: proof,
+      paymentVerified: false,
+      cashCollected: false,
+      status: 'recibido',
+      notes: texto(d.notes, 500),
+      lat: numeroONull(d.lat),
+      lng: numeroONull(d.lng),
+      nearNotified: false,
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  });
+
+  return { id: orderRef.id };
+});
+
+// Vuelve a contar los panes apartados de un día a partir de sus pedidos
+// (los cancelados no cuentan). Se puede correr las veces que sea: siempre da lo mismo.
+async function recontarDia(date) {
+  if (!date) return;
+  const db = getFirestore();
+  const prods = await db.collection('products').get();
+  const byId = Object.fromEntries(prods.docs.map((p) => [p.id, p.data()]));
+  const stockRef = db.collection('dayStock').doc(date);
+  await db.runTransaction(async (tx) => {
+    await tx.get(stockRef); // para que un pedido al mismo tiempo no se pierda
+    const orders = await tx.get(db.collection('orders').where('deliveryDate', '==', date));
+    const used = {};
+    for (const o of orders.docs) {
+      if (o.get('status') === 'cancelado') continue;
+      for (const it of o.get('items') || []) {
+        const key = stockKey(it.productId, byId[it.productId]);
+        used[key] = (used[key] || 0) + (Number(it.qty) || 0);
+      }
+    }
+    tx.set(stockRef, { used, updatedAt: FieldValue.serverTimestamp() });
+  });
+}
+
+// Lo que importa para el cupo de un pedido: día, si está cancelado y qué lleva.
+const huellaCupo = (o) => (o ? JSON.stringify([o.deliveryDate, o.status === 'cancelado', o.items]) : '');
+
+exports.recontarCupoPorPedido = onDocumentWritten('orders/{id}', async (event) => {
+  const before = event.data && event.data.before.exists ? event.data.before.data() : null;
+  const after = event.data && event.data.after.exists ? event.data.after.data() : null;
+  if (huellaCupo(before) === huellaCupo(after)) return;
+  const dates = new Set([before && before.deliveryDate, after && after.deliveryDate].filter(Boolean));
+  for (const date of dates) await recontarDia(date);
+});
+
+// Al poner o cambiar el cupo de un día, se cuentan los pedidos que ya tenía.
+exports.recontarCupoPorDia = onDocumentWritten('deliveryDays/{date}', async (event) => {
+  if (!event.data || !event.data.after.exists) return;
+  const before = event.data.before.exists ? event.data.before.get('stock') : undefined;
+  const after = event.data.after.get('stock');
+  if (event.data.before.exists && JSON.stringify(before) === JSON.stringify(after)) return;
+  await recontarDia(event.params.date);
+});
+
+// Si el dueño junta o separa productos en grupos de masa, se recuentan los días que vienen.
+exports.recontarCupoPorProducto = onDocumentWritten('products/{id}', async (event) => {
+  const before = event.data && event.data.before.exists ? event.data.before.get('stockGroup') || '' : null;
+  const after = event.data && event.data.after.exists ? event.data.after.get('stockGroup') || '' : null;
+  if (before === after) return;
+  const hoy = new Date(Date.now() - 6 * 3600 * 1000).toISOString().slice(0, 10); // hora de México
+  const db = getFirestore();
+  const dias = await db.collection('deliveryDays').where('__name__', '>=', hoy).get();
+  for (const dia of dias.docs) await recontarDia(dia.id);
+});
+
+// Al borrar un pedido, también se borra la captura de la transferencia.
+exports.limpiarPedidoBorrado = onDocumentDeleted('orders/{id}', async (event) => {
+  const path = event.data && event.data.get('paymentProofPath');
+  if (typeof path !== 'string' || !path.startsWith('payment-proofs/')) return;
+  await getStorage().bucket().file(path).delete({ ignoreNotFound: true });
+});
+
+// ---------------------------------------------------------------------------
+// Mover o editar un día de entrega (solo el dueño)
+// ---------------------------------------------------------------------------
+// Cambia la fecha y/o el horario de un día. Sus pedidos se pasan al día nuevo
+// (con su cupo) y a cada cliente con pedido pendiente le llega un aviso.
+const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
+const HORA_RE = /^\d{2}:\d{2}$/;
+
+async function esDueno(uid) {
+  if (!uid) return false;
+  const u = await getFirestore().collection('users').doc(uid).get();
+  return u.get('role') === 'dueno';
+}
+
+// Horario nuevo de un pedido. Si se recorrió todo el horario (misma cantidad de
+// horarios), cada pedido se recorre igual; si no, se queda en su hora o en la más cercana.
+function horarioNuevo(slot, antes, despues) {
+  const i = antes.indexOf(slot);
+  if (antes.length === despues.length && i >= 0) return despues[i];
+  if (despues.includes(slot)) return slot;
+  const min = (s) => { const [h, m] = String(s).split(':').map(Number); return h * 60 + (m || 0); };
+  return despues.reduce((best, s) => (Math.abs(min(s) - min(slot)) < Math.abs(min(best) - min(slot)) ? s : best));
+}
+
+function diaBonito(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Intl.DateTimeFormat('es-MX', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' })
+    .format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+function horarioBonito(slot, minutos) {
+  const [h, m] = slot.split(':').map(Number);
+  const ini = h * 60 + m;
+  const fin = ini + (minutos || 60);
+  const f = (x) => `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`;
+  return `${f(ini)} a ${f(fin)}`;
+}
+
+const PENDIENTES = ['recibido', 'confirmado', 'enCamino'];
+
+exports.moverDia = onCall(async (req) => {
+  if (!(await esDueno(req.auth && req.auth.uid))) {
+    throw new HttpsError('permission-denied', 'Solo el dueño puede mover días.');
+  }
+  const { from, to } = req.data || {};
+  const slots = Array.isArray(req.data && req.data.slots) ? req.data.slots : [];
+  const slotMinutes = Number((req.data && req.data.slotMinutes) || 60);
+  if (!DIA_RE.test(String(from)) || !DIA_RE.test(String(to))) {
+    throw new HttpsError('invalid-argument', 'Fecha no válida.');
+  }
+  if (slots.length === 0 || slots.length > 24 || !slots.every((s) => HORA_RE.test(String(s)))) {
+    throw new HttpsError('invalid-argument', 'Elige el horario del día.');
+  }
+  slots.sort();
+
+  const db = getFirestore();
+  const fromRef = db.collection('deliveryDays').doc(from);
+  const toRef = db.collection('deliveryDays').doc(to);
+  const avisos = [];
+
+  await db.runTransaction(async (tx) => {
+    avisos.length = 0;
+    const dia = await tx.get(fromRef);
+    if (!dia.exists) throw new HttpsError('not-found', 'Ese día ya no existe.');
+    const pedidos = await tx.get(db.collection('orders').where('deliveryDate', '==', from));
+    if (from !== to) {
+      const ocupado = await tx.get(db.collection('orders').where('deliveryDate', '==', to));
+      if (ocupado.docs.some((o) => PENDIENTES.includes(o.get('status')))) {
+        throw new HttpsError('failed-precondition',
+          `El ${diaBonito(to)} ya tiene pedidos. Elige otra fecha.`);
+      }
+    }
+
+    const antes = dia.get('slots') || [];
+    const nuevo = { ...dia.data(), slots, slotMinutes };
+    if (from !== to) {
+      tx.set(toRef, nuevo);
+      tx.delete(fromRef);
+    } else {
+      tx.update(fromRef, { slots, slotMinutes });
+    }
+
+    for (const o of pedidos.docs) {
+      const slot = horarioNuevo(o.get('slot'), antes, slots);
+      if (from === to && slot === o.get('slot')) continue;
+      tx.update(o.ref, {
+        deliveryDate: to,
+        slot,
+        // Lo que ve el cliente en su pedido: "Tu entrega se movió".
+        movedFrom: { date: from, slot: o.get('slot') },
+        movedAt: FieldValue.serverTimestamp(),
+      });
+      if (PENDIENTES.includes(o.get('status'))) {
+        avisos.push({ uid: o.get('customerId'), slot });
+      }
+    }
+  });
+
+  // El cupo del día viejo y del nuevo se recuentan solos al moverse los pedidos.
+  for (const a of avisos) {
+    try {
+      await avisarCliente(a.uid, 'Cambiamos tu entrega 📅',
+        `Tu pedido ahora llega el ${diaBonito(to)}, de ${horarioBonito(a.slot, slotMinutes)}. ¡Gracias por tu paciencia!`);
+    } catch (e) {
+      console.error('No se pudo avisar a', a.uid, e);
+    }
+  }
+  return { moved: avisos.length };
+});

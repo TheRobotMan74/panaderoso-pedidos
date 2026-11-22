@@ -93,6 +93,10 @@ class _OrderCard extends StatelessWidget {
               StatusChip(status: o.status),
             ],
           ),
+          if (o.wasMoved && o.isPending) ...[
+            const SizedBox(height: 12),
+            _MovedNotice(order: o),
+          ],
           if (o.status != OrderStatus.cancelado) ...[
             const SizedBox(height: 16),
             OrderProgress(status: o.status),
@@ -150,6 +154,48 @@ class _OrderCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// "Cambiamos tu entrega": cuando el dueño movió el día o el horario.
+class _MovedNotice extends StatelessWidget {
+  final BakeryOrder order;
+  const _MovedNotice({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final o = order;
+    final before = '${dayLabel(o.movedFromDate!)}'
+        '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!)}'}';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Pan.cieloClaro,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('📅', style: TextStyle(fontSize: 20)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Cambiamos tu entrega',
+                    style: TextStyle(fontWeight: FontWeight.w800, color: Pan.cielo)),
+                const SizedBox(height: 2),
+                Text(
+                  'Ahora llega el ${dayLabel(o.deliveryDate)}, de ${slotLabel(o.slot)}. '
+                  'Antes era el $before.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

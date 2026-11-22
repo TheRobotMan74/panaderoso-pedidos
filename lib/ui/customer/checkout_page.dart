@@ -7,11 +7,13 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../logic/cart.dart';
 import '../../logic/schedule.dart';
+import '../../logic/stock.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../order_placed.dart';
 import '../product_image.dart';
+import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -78,6 +80,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
       widget.cart.clear();
       if (!mounted) return;
       Navigator.pop(context, true);
+    } on RejectedByServer catch (e) {
+      // Por ejemplo: alguien más se llevó los últimos panes justo antes.
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
@@ -95,29 +102,53 @@ class _CheckoutPageState extends State<CheckoutPage> {
         stream: Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())),
         builder: (context, daysSnap) => StreamBuilder<AppConfig>(
           stream: Repo.instance.config(),
-          builder: (context, cfgSnap) {
-            if (!daysSnap.hasData || !cfgSnap.hasData) {
-              return const SkeletonList(count: 3);
-            }
-            final days = orderableDays(daysSnap.data!, DateTime.now());
-            final selected = days.where((d) => d.date == _date).firstOrNull;
-            return _body(days, selected, cfgSnap.data!);
-          },
+          builder: (context, cfgSnap) => StreamBuilder<List<Product>>(
+            stream: Repo.instance.products(),
+            builder: (context, prodSnap) => StreamBuilder<Map<String, DayStock>>(
+              stream: Repo.instance.dayStocks(fromDate: dateKey(DateTime.now())),
+              builder: (context, stockSnap) {
+                if (!daysSnap.hasData || !cfgSnap.hasData) {
+                  return const SkeletonList(count: 3);
+                }
+                final days = orderableDays(daysSnap.data!, DateTime.now());
+                final selected = days.where((d) => d.date == _date).firstOrNull;
+                return _body(
+                  days,
+                  selected,
+                  cfgSnap.data!,
+                  products: prodSnap.data ?? const [],
+                  stocks: stockSnap.data ?? const {},
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
   }
 
-  Widget _body(List<DeliveryDay> days, DeliveryDay? day, AppConfig cfg) {
+  Widget _body(
+    List<DeliveryDay> days,
+    DeliveryDay? day,
+    AppConfig cfg, {
+    required List<Product> products,
+    required Map<String, DayStock> stocks,
+  }) {
     final theme = Theme.of(context);
     final cart = widget.cart;
+    final byId = {for (final p in products) p.id: p};
+    final need = needByGroup(cart.items, byId);
+    final over = day == null ? const <String>[] : overLimit(day, stocks[day.date], need);
     final needsProof = _payment == PaymentMethod.transferencia && _proof == null;
-    final canPlace = !_busy && day != null && _slot != null && !needsProof && !cart.isEmpty;
+    final canPlace =
+        !_busy && day != null && _slot != null && !needsProof && !cart.isEmpty && over.isEmpty;
     final d = Motion.of(context, Motion.medio);
 
     String? hint;
     if (day == null) {
       hint = 'Elige el día de entrega.';
+    } else if (over.isNotEmpty) {
+      hint = 'Ese día ya no alcanza el pan para tu pedido. Quita algunas piezas o elige otro día.';
     } else if (_slot == null) {
       hint = 'Elige un horario.';
     } else if (needsProof) {
@@ -199,7 +230,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           )
         else
           SizedBox(
-            height: 104,
+            height: 118,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -209,6 +240,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 index: i + 1,
                 child: _DayCard(
                   day: days[i],
+                  fits: overLimit(days[i], stocks[days[i].date], need).isEmpty,
+                  left: _leftFor(days[i], stocks[days[i].date], need),
                   selected: days[i].date == _date,
                   onTap: () => setState(() {
                     _date = days[i].date;
@@ -228,6 +261,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   key: ValueKey(day.date),
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _stockBox(day, stocks[day.date], need, byId),
                     const SectionTitle('Horario'),
                     Wrap(
                       spacing: 8,
@@ -311,6 +345,56 @@ class _CheckoutPageState extends State<CheckoutPage> {
     );
   }
 
+  /// Lo que queda ese día de los panes que lleva el carrito (null = sin límite).
+  int? _leftFor(DeliveryDay day, DayStock? stock, Map<String, int> need) {
+    final lefts = [for (final k in need.keys) ?remainingFor(day, stock, k)];
+    if (lefts.isEmpty) return null;
+    return lefts.reduce((a, b) => a + b);
+  }
+
+  /// Contador en vivo de los panes que quedan ese día, solo de lo que lleva el carrito.
+  Widget _stockBox(DeliveryDay day, DayStock? stock, Map<String, int> need, Map<String, Product> byId) {
+    final groups = [
+      for (final g in stockGroups(byId.values.toList()))
+        if (need.containsKey(g.key) && day.stock.containsKey(g.key)) g,
+    ];
+    if (groups.isEmpty) return const SizedBox(width: double.infinity);
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: PanCard(
+        margin: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Pan disponible ese día', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 6),
+            for (final g in groups) ...[
+              StockMeter(
+                label: g.label,
+                detail: g.shared ? g.productNames : null,
+                left: remainingFor(day, stock, g.key) ?? 0,
+                limit: day.stock[g.key]!,
+              ),
+              if (need[g.key]! > (remainingFor(day, stock, g.key) ?? 0))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    (remainingFor(day, stock, g.key) ?? 0) == 0
+                        ? 'Ya no quedan de ${g.label} ese día. Prueba otro día.'
+                        : 'Llevas ${need[g.key]} y solo ${remainingText(remainingFor(day, stock, g.key)!)}. '
+                            'Quita ${need[g.key]! - remainingFor(day, stock, g.key)!} o elige otro día.',
+                    style: theme.textTheme.bodySmall!
+                        .copyWith(color: Pan.terracota, fontWeight: FontWeight.w700),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _transferBox(AppConfig cfg) {
     final theme = Theme.of(context);
     return PanCard(
@@ -388,7 +472,19 @@ class _DayCard extends StatelessWidget {
   final DeliveryDay day;
   final bool selected;
   final VoidCallback onTap;
-  const _DayCard({required this.day, required this.selected, required this.onTap});
+
+  /// Si el carrito cabe en el cupo de ese día.
+  final bool fits;
+
+  /// Panes que quedan ese día de lo que lleva el carrito (null = sin límite).
+  final int? left;
+  const _DayCard({
+    required this.day,
+    required this.selected,
+    required this.onTap,
+    this.fits = true,
+    this.left,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -426,6 +522,18 @@ class _DayCard extends StatelessWidget {
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: selected ? Pan.tostado : Pan.canela)),
+            if (!fits || left != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: AnimatedCount(
+                  !fits ? (left == 0 ? 'Agotado' : 'No alcanza') : 'Quedan $left',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: !fits ? Pan.terracota : (selected ? Pan.cacao : Pan.salvia),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

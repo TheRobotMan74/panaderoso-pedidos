@@ -2,11 +2,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/cart.dart';
+import '../../logic/schedule.dart';
+import '../../logic/stock.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../product_image.dart';
 import '../profile_page.dart';
+import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'checkout_page.dart';
@@ -352,9 +355,72 @@ class _Welcome extends StatelessWidget {
               ],
             ),
           ),
+          const _NextDayStock(),
           const SizedBox(height: 6),
           const SectionTitle('Nuestro pan'),
         ],
+      ),
+    );
+  }
+}
+
+/// Contador en vivo del próximo día de entrega: "Para el lunes 23 quedan 40 panes".
+/// Solo aparece si el dueño le puso cupo a ese día.
+class _NextDayStock extends StatelessWidget {
+  const _NextDayStock();
+
+  @override
+  Widget build(BuildContext context) {
+    final today = dateKey(DateTime.now());
+    return StreamBuilder<List<DeliveryDay>>(
+      stream: Repo.instance.deliveryDays(fromDate: today),
+      builder: (context, daysSnap) => StreamBuilder<Map<String, DayStock>>(
+        stream: Repo.instance.dayStocks(fromDate: today),
+        builder: (context, stockSnap) => StreamBuilder<List<Product>>(
+          stream: Repo.instance.products(),
+          builder: (context, prodSnap) {
+            final next = orderableDays(daysSnap.data ?? const [], DateTime.now()).firstOrNull;
+            final total = next == null ? null : totalRemaining(next, stockSnap.data?[next.date]);
+            final child = next == null || total == null
+                ? const SizedBox(width: double.infinity)
+                : _card(context, next, stockSnap.data?[next.date], prodSnap.data ?? const [], total);
+            return AnimatedSize(
+              duration: Motion.of(context, Motion.medio),
+              curve: Motion.curva,
+              alignment: Alignment.topCenter,
+              child: child,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context, DeliveryDay day, DayStock? stock, List<Product> products, int total) {
+    final groups = [for (final g in stockGroups(products)) if (day.stock.containsKey(g.key)) g];
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: PanCard(
+        margin: EdgeInsets.zero,
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Para el ${dayLabel(day.date)}',
+                style: Theme.of(context).textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            StockTotal(left: total),
+            if (groups.length > 1) ...[
+              const SizedBox(height: 4),
+              for (final g in groups)
+                StockMeter(
+                  label: g.label,
+                  left: remainingFor(day, stock, g.key) ?? 0,
+                  limit: day.stock[g.key]!,
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }

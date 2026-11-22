@@ -33,6 +33,12 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    // Panes apartados por día. Solo los escribe el servidor (functions/index.js).
+    match /dayStock/{date} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
     match /config/{doc} {
       allow read: if signedIn();
       allow write: if isOwner();
@@ -48,6 +54,8 @@ service cloud.firestore {
     match /orders/{id} {
       allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isOwner());
 
+      // Los pedidos se hacen con la función "hacerPedido", que revisa el cupo.
+      // Crear directo solo se deja (para versiones viejas de la app) en días sin cupo.
       // El cliente crea su pedido "recibido", sin marcar pagos y con un día abierto.
       // No hay hora límite: se puede pedir hasta que el dueño empieza a repartir
       // ("closed") o hasta que termina el día (00:00 UTC + 30 h = medianoche en México).
@@ -62,6 +70,7 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate))
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.open == true
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('closed', false) == false
+        && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('stock', {}).size() == 0
         && request.time < timestamp.date(
              int(request.resource.data.deliveryDate.split('-')[0]),
              int(request.resource.data.deliveryDate.split('-')[1]),

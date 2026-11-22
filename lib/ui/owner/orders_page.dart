@@ -16,8 +16,29 @@ import 'day_route_map.dart';
 /// Pedidos en vivo, agrupados por día y horario.
 /// Dentro de cada horario van en orden de ruta (la más corta desde tu punto de salida),
 /// y al final está el mapa del día con las casas numeradas.
-class OrdersPage extends StatelessWidget {
+/// Hasta abajo, plegados: los cancelados y los de días que ya pasaron.
+/// Con "Seleccionar varios" se pueden borrar muchos de un jalón (por ejemplo, los de prueba).
+class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
+
+  @override
+  State<OrdersPage> createState() => _OrdersPageState();
+}
+
+class _OrdersPageState extends State<OrdersPage> {
+  /// Pedidos palomeados para borrar. Null = no se está seleccionando.
+  Set<String>? _selected;
+  bool _deleting = false;
+
+  bool get _selecting => _selected != null;
+
+  void _toggle(String id) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      final s = _selected!;
+      if (!s.remove(id)) s.add(id);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,27 +62,95 @@ class OrdersPage extends StatelessWidget {
     ];
   }
 
+  Future<void> _deleteSelected(List<BakeryOrder> all) async {
+    final ids = [for (final o in all) if (_selected!.contains(o.id)) o.id];
+    if (ids.isEmpty) return;
+    final n = ids.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.delete_forever_rounded, color: Pan.terracota, size: 32),
+        title: Text(n == 1 ? '¿Eliminar 1 pedido?' : '¿Eliminar $n pedidos?'),
+        content: Text(
+          '${n == 1 ? 'Se borra' : 'Se borran'} para siempre, también del celular de cada cliente. '
+          'Sus panes vuelven al cupo del día.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Pan.terracota),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(n == 1 ? 'Sí, eliminar' : 'Sí, eliminar $n'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    HapticFeedback.mediumImpact();
+    setState(() => _deleting = true);
+    try {
+      await Repo.instance.deleteOrders(ids);
+      if (!mounted) return;
+      setState(() {
+        _deleting = false;
+        _selected = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(n == 1 ? 'Pedido eliminado ✓' : '$n pedidos eliminados ✓'),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudieron eliminar. Intenta de nuevo. ($e)')),
+      );
+    }
+  }
+
   Widget _orders(BuildContext context, AppConfig cfg) {
     final Point? base =
         cfg.baseLat != null && cfg.baseLng != null ? (cfg.baseLat!, cfg.baseLng!) : null;
+    final now = DateTime.now();
+    final today = dateKey(now);
+    // También trae los de las últimas semanas, para poder borrar pedidos de prueba viejos.
+    final since = dateKey(DateTime(now.year, now.month, now.day - 30));
     return StreamBuilder<List<BakeryOrder>>(
-      stream: Repo.instance.ordersFrom(dateKey(DateTime.now())),
+      stream: Repo.instance.ordersFrom(since),
       builder: (context, snap) {
         if (snap.hasError) {
           return EmptyState(title: 'No cargaron los pedidos', message: '${snap.error}');
         }
         if (!snap.hasData) return const SkeletonList(count: 3);
+        final all = snap.data!;
         final orders = _routed(
-          snap.data!.where((o) => o.status != OrderStatus.cancelado).toList(),
+          all
+              .where((o) => o.status != OrderStatus.cancelado && o.deliveryDate.compareTo(today) >= 0)
+              .toList(),
           base,
         );
-        if (orders.isEmpty) {
+        final cancelled = all.where((o) => o.status == OrderStatus.cancelado).toList()
+          ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
+        final past = all
+            .where((o) => o.status != OrderStatus.cancelado && o.deliveryDate.compareTo(today) < 0)
+            .toList()
+          ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
+        if (orders.isEmpty && cancelled.isEmpty && past.isEmpty) {
           return const EmptyState(
             title: 'Todo tranquilo por aquí',
             message: 'No hay pedidos pendientes. Cuando llegue uno, aparece aquí al momento.',
           );
         }
-        final children = <Widget>[];
+        final selected = _selected ?? const <String>{};
+        final picked = all.where((o) => selected.contains(o.id)).length;
+
+        final children = <Widget>[
+          _SelectHeader(
+            selecting: _selecting,
+            allPicked: picked == all.length,
+            onStart: () => setState(() => _selected = {}),
+            onAll: () => setState(() => _selected = picked == all.length ? {} : all.map((o) => o.id).toSet()),
+          ),
+        ];
         String? lastDate;
         String? lastSlot;
         var stop = 0;
@@ -120,26 +209,187 @@ class OrdersPage extends StatelessWidget {
             order: o,
             stop: stop,
             stopColor: colorForSlot(daySlots, o.slot),
+            selecting: _selecting,
+            selected: selected.contains(o.id),
+            onToggle: () => _toggle(o.id),
           ));
         }
-        // Mapa del día más próximo (hoy, o el siguiente día con pedidos).
-        final mapDate = orders.first.deliveryDate;
-        children.add(Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: DayRouteMap(
-            date: mapDate,
-            stops: orders.where((o) => o.deliveryDate == mapDate).toList(),
-            base: base,
-          ),
-        ));
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          itemCount: children.length,
-          itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
+        if (orders.isEmpty) {
+          children.add(const Padding(
+            padding: EdgeInsets.fromLTRB(8, 24, 8, 0),
+            child: Text('No hay pedidos pendientes.', textAlign: TextAlign.center),
+          ));
+        } else if (!_selecting) {
+          // Mapa del día más próximo (hoy, o el siguiente día con pedidos).
+          final mapDate = orders.first.deliveryDate;
+          children.add(Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: DayRouteMap(
+              date: mapDate,
+              stops: orders.where((o) => o.deliveryDate == mapDate).toList(),
+              base: base,
+            ),
+          ));
+        }
+        if (cancelled.isNotEmpty) {
+          children.add(_FoldedSection(
+            icon: Icons.block_rounded,
+            title: 'Cancelados (${cancelled.length})',
+            subtitle: 'Puedes eliminarlos para que ya no salgan',
+            orders: cancelled,
+            selecting: _selecting,
+            selected: selected,
+            onToggle: _toggle,
+          ));
+        }
+        if (past.isNotEmpty) {
+          children.add(_FoldedSection(
+            icon: Icons.history_rounded,
+            title: 'Días que ya pasaron (${past.length})',
+            subtitle: 'Pedidos de las últimas semanas',
+            orders: past,
+            selecting: _selecting,
+            selected: selected,
+            onToggle: _toggle,
+          ));
+        }
+        return Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                itemCount: children.length,
+                itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
+              ),
+            ),
+            AnimatedSize(
+              duration: Motion.of(context, Motion.medio),
+              curve: Motion.curva,
+              alignment: Alignment.bottomCenter,
+              child: _selecting
+                  ? _DeleteBar(
+                      count: picked,
+                      busy: _deleting,
+                      onCancel: () => setState(() => _selected = null),
+                      onDelete: () => _deleteSelected(all),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
         );
       },
     );
   }
+}
+
+/// Arriba de la lista: "Seleccionar varios" o, ya seleccionando, "Todos".
+class _SelectHeader extends StatelessWidget {
+  final bool selecting;
+  final bool allPicked;
+  final VoidCallback onStart;
+  final VoidCallback onAll;
+  const _SelectHeader({
+    required this.selecting,
+    required this.allPicked,
+    required this.onStart,
+    required this.onAll,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: AnimatedSwitcher(
+                duration: Motion.of(context, Motion.rapido),
+                child: selecting
+                    ? Text(
+                        'Toca los pedidos que quieras borrar',
+                        key: const ValueKey('sel'),
+                        style: Theme.of(context).textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w700),
+                      )
+                    : const SizedBox.shrink(key: ValueKey('nada')),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: selecting ? onAll : onStart,
+              icon: Icon(selecting
+                  ? (allPicked ? Icons.remove_done_rounded : Icons.done_all_rounded)
+                  : Icons.checklist_rounded),
+              label: Text(selecting ? (allPicked ? 'Ninguno' : 'Todos') : 'Seleccionar varios'),
+            ),
+          ],
+        ),
+      );
+}
+
+/// Barra de abajo mientras se seleccionan pedidos para borrar.
+class _DeleteBar extends StatelessWidget {
+  final int count;
+  final bool busy;
+  final VoidCallback onCancel;
+  final VoidCallback onDelete;
+  const _DeleteBar({required this.count, required this.busy, required this.onCancel, required this.onDelete});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: const BoxDecoration(
+          color: Pan.papel,
+          boxShadow: [BoxShadow(color: Color(0x1F7A4A12), blurRadius: 16, offset: Offset(0, -4))],
+        ),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            children: [
+              TextButton(onPressed: busy ? null : onCancel, child: const Text('Cancelar')),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Pan.terracota,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  onPressed: count == 0 || busy ? null : onDelete,
+                  icon: busy
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+                        )
+                      : const Icon(Icons.delete_rounded),
+                  label: AnimatedCount(
+                    count == 0
+                        ? 'Elige pedidos'
+                        : (count == 1 ? 'Eliminar 1 pedido' : 'Eliminar $count pedidos'),
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+/// Palomita para seleccionar un pedido.
+class _Check extends StatelessWidget {
+  final bool selected;
+  const _Check({required this.selected});
+
+  @override
+  Widget build(BuildContext context) => AnimatedSwitcher(
+        duration: Motion.of(context, Motion.rapido),
+        transitionBuilder: (child, a) => ScaleTransition(scale: a, child: child),
+        child: Icon(
+          selected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          key: ValueKey(selected),
+          size: 26,
+          color: selected ? Pan.terracota : Pan.canela,
+        ),
+      );
 }
 
 class _OrderCard extends StatelessWidget {
@@ -148,7 +398,21 @@ class _OrderCard extends StatelessWidget {
   /// Número de parada en la ruta del día.
   final int stop;
   final Color stopColor;
-  const _OrderCard({super.key, required this.order, required this.stop, required this.stopColor});
+
+  /// Modo "Seleccionar varios": tocar la tarjeta la palomea.
+  final bool selecting;
+  final bool selected;
+  final VoidCallback onToggle;
+
+  const _OrderCard({
+    super.key,
+    required this.order,
+    required this.stop,
+    required this.stopColor,
+    this.selecting = false,
+    this.selected = false,
+    required this.onToggle,
+  });
 
   static const _next = {
     OrderStatus.recibido: (OrderStatus.confirmado, 'Confirmar'),
@@ -211,10 +475,16 @@ class _OrderCard extends StatelessWidget {
     final o = order;
     final theme = Theme.of(context);
     final next = _next[o.status];
+    final moved = o.wasMoved
+        ? 'Movido del ${dayLabel(o.movedFromDate!)}'
+            '${o.movedFromSlot == null ? '' : ', ${slotLabel(o.movedFromSlot!)}'}'
+        : null;
     final isCash = o.paymentMethod == PaymentMethod.efectivo;
     final (accent, _, _) = statusStyle(o.status);
     return PanCard(
       padding: EdgeInsets.zero,
+      color: selected ? const Color(0xFFFBE6E1) : null,
+      onTap: selecting ? onToggle : null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Pan.radio),
         child: Stack(
@@ -224,7 +494,11 @@ class _OrderCard extends StatelessWidget {
               left: 0,
               top: 0,
               bottom: 0,
-              child: AnimatedContainer(duration: Motion.of(context, Motion.medio), width: 6, color: accent),
+              child: AnimatedContainer(
+                duration: Motion.of(context, Motion.medio),
+                width: 6,
+                color: selected ? Pan.terracota : accent,
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 14, 12),
@@ -233,10 +507,13 @@ class _OrderCard extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      _StopBadge(
-                        stop: stop,
-                        color: o.status == OrderStatus.entregado ? const Color(0xFF9E9E9E) : stopColor,
-                      ),
+                      if (selecting)
+                        _Check(selected: selected)
+                      else
+                        _StopBadge(
+                          stop: stop,
+                          color: o.status == OrderStatus.entregado ? const Color(0xFF9E9E9E) : stopColor,
+                        ),
                       const SizedBox(width: 8),
                       Expanded(child: Text(o.customerName, style: theme.textTheme.titleMedium)),
                       StatusChip(status: o.status),
@@ -246,7 +523,8 @@ class _OrderCard extends StatelessWidget {
                   _line(Icons.place_outlined, o.address, theme.textTheme.bodyMedium!),
                   if (o.addressNotes.isNotEmpty)
                     _line(Icons.sticky_note_2_outlined, o.addressNotes, theme.textTheme.bodySmall!),
-                  _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: true),
+                  _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: !selecting),
+                  if (moved != null) _line(Icons.edit_calendar_rounded, moved, theme.textTheme.bodySmall!),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 6,
@@ -296,45 +574,58 @@ class _OrderCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      if (next != null)
-                        FilledButton(
-                          onPressed: () {
-                            HapticFeedback.lightImpact();
-                            Repo.instance.updateOrder(o.id, {'status': next.$1.name});
-                          },
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  // Mientras se seleccionan pedidos para borrar, los botones se esconden
+                  // para no picar uno sin querer.
+                  AnimatedSize(
+                    duration: Motion.of(context, Motion.medio),
+                    curve: Motion.curva,
+                    alignment: Alignment.topCenter,
+                    child: selecting
+                        ? const SizedBox(width: double.infinity)
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (next != null)
+                                  FilledButton(
+                                    onPressed: () {
+                                      HapticFeedback.lightImpact();
+                                      Repo.instance.updateOrder(o.id, {'status': next.$1.name});
+                                    },
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    ),
+                                    child: Text(next.$2),
+                                  ),
+                                if (o.status != OrderStatus.entregado)
+                                  OutlinedButton.icon(
+                                    onPressed: _directions,
+                                    icon: const Icon(Icons.directions_rounded, size: 18),
+                                    label: const Text('Cómo llegar'),
+                                  ),
+                                if (!isCash && o.paymentProofPath != null)
+                                  OutlinedButton(
+                                    onPressed: () => _showProof(context),
+                                    child: const Text('Ver captura'),
+                                  ),
+                                if (isCash && !o.cashCollected)
+                                  OutlinedButton(
+                                    onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
+                                    child: const Text('Cobrado'),
+                                  ),
+                                if (o.status != OrderStatus.entregado)
+                                  TextButton(
+                                    onPressed: () => _cancel(context),
+                                    style: TextButton.styleFrom(foregroundColor: Pan.terracota),
+                                    child: const Text('Cancelar'),
+                                  ),
+                                _DeleteOrderButton(order: o),
+                              ],
+                            ),
                           ),
-                          child: Text(next.$2),
-                        ),
-                      if (o.status != OrderStatus.entregado)
-                        OutlinedButton.icon(
-                          onPressed: _directions,
-                          icon: const Icon(Icons.directions_rounded, size: 18),
-                          label: const Text('Cómo llegar'),
-                        ),
-                      if (!isCash && o.paymentProofPath != null)
-                        OutlinedButton(
-                          onPressed: () => _showProof(context),
-                          child: const Text('Ver captura'),
-                        ),
-                      if (isCash && !o.cashCollected)
-                        OutlinedButton(
-                          onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
-                          child: const Text('Cobrado'),
-                        ),
-                      if (o.status != OrderStatus.entregado)
-                        TextButton(
-                          onPressed: () => _cancel(context),
-                          style: TextButton.styleFrom(foregroundColor: Pan.terracota),
-                          child: const Text('Cancelar'),
-                        ),
-                    ],
                   ),
                 ],
               ),
@@ -380,4 +671,118 @@ class _StopBadge extends StatelessWidget {
           style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13),
         ),
       );
+}
+
+/// Borrar un pedido para siempre (por ejemplo, uno de prueba).
+/// Desaparece también en el celular del cliente y libera su cupo.
+Future<void> confirmDeleteOrder(BuildContext context, BakeryOrder o) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.delete_forever_rounded, color: Pan.terracota, size: 32),
+      title: const Text('¿Eliminar este pedido?'),
+      content: Text(
+        'El pedido de ${o.customerName} (${o.pieces} '
+        '${o.pieces == 1 ? 'pieza' : 'piezas'}, ${money(o.total)}) se borra para siempre, '
+        'también del celular del cliente. Sus panes vuelven al cupo del día.\n\n'
+        'Si solo quieres avisarle que no va, mejor usa "Cancelar".',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Pan.terracota),
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Sí, eliminar'),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  HapticFeedback.mediumImpact();
+  try {
+    await Repo.instance.deleteOrder(o.id);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Pedido eliminado ✓')));
+    }
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('No se pudo eliminar. Intenta de nuevo. ($e)')));
+    }
+  }
+}
+
+class _DeleteOrderButton extends StatelessWidget {
+  final BakeryOrder order;
+  const _DeleteOrderButton({required this.order});
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: 'Eliminar pedido',
+        onPressed: () => confirmDeleteOrder(context, order),
+        icon: const Icon(Icons.delete_outline_rounded, color: Pan.terracota),
+      );
+}
+
+/// Pedidos plegados al final de la lista (cancelados, o de días que ya pasaron).
+class _FoldedSection extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final List<BakeryOrder> orders;
+  final bool selecting;
+  final Set<String> selected;
+  final ValueChanged<String> onToggle;
+  const _FoldedSection({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.orders,
+    required this.selecting,
+    required this.selected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: PanCard(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        color: Pan.harina,
+        child: ExpansionTile(
+          // Al empezar a seleccionar se abre sola, para ver qué palomear.
+          key: ValueKey(selecting),
+          initiallyExpanded: selecting,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: Icon(icon, color: Pan.canela),
+          title: Text(title, style: theme.textTheme.titleSmall),
+          subtitle: Text(subtitle, style: theme.textTheme.bodySmall),
+          children: [
+            for (final o in orders)
+              ListTile(
+                contentPadding: const EdgeInsets.only(left: 12, right: 4),
+                onTap: selecting ? () => onToggle(o.id) : null,
+                title: Text(o.customerName, style: theme.textTheme.titleSmall),
+                subtitle: Text(
+                  '${capitalize(dayLabel(o.deliveryDate))} · ${o.pieces} '
+                  '${o.pieces == 1 ? 'pieza' : 'piezas'} · ${money(o.total)}'
+                  '${o.status == OrderStatus.cancelado ? '' : ' · ${orderStatusLabels[o.status]}'}',
+                  style: theme.textTheme.bodySmall,
+                ),
+                trailing: selecting
+                    ? Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _Check(selected: selected.contains(o.id)),
+                      )
+                    : _DeleteOrderButton(order: o),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -1,13 +1,14 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models.dart';
 
 /// Acceso a los datos en Firebase. Colecciones:
-/// users, products, deliveryDays, orders, config/app, tracking/current.
+/// users, products, deliveryDays, dayStock, orders, config/app, tracking/current.
 class Repo {
   Repo._();
   static final instance = Repo._();
@@ -41,6 +42,10 @@ class Repo {
         return onlyAvailable ? list.where((p) => p.available).toList() : list;
       });
 
+  /// Cambia solo el grupo de masa de un producto ('' = cupo propio).
+  Future<void> setProductGroup(String productId, String group) =>
+      _db.collection('products').doc(productId).update({'stockGroup': group.trim()});
+
   Future<void> saveProduct(Product p) {
     final col = _db.collection('products');
     return p.id.isEmpty ? col.add(p.toMap()) : col.doc(p.id).set(p.toMap());
@@ -61,12 +66,50 @@ class Repo {
       .map((s) => s.docs.map((d) => DeliveryDay.fromMap(d.id, d.data())).toList()
         ..sort((a, b) => a.date.compareTo(b.date)));
 
-  Future<void> saveDeliveryDay(DeliveryDay d) =>
-      _db.collection('deliveryDays').doc(d.date).set(d.toMap());
+  /// Guarda el día. Si ya existía, se respeta si ya estaba en reparto.
+  Future<void> saveDeliveryDay(DeliveryDay d) {
+    final m = d.toMap()..remove('closed');
+    return _db.collection('deliveryDays').doc(d.date).set(m, SetOptions(merge: true));
+  }
+
+  Future<void> setDayOpen(String date, bool open) =>
+      _db.collection('deliveryDays').doc(date).update({'open': open});
+
+  /// Cupo del día por grupo de masa. Un grupo sin número no tiene límite.
+  Future<void> setDayStock(String date, Map<String, int> stock) =>
+      _db.collection('deliveryDays').doc(date).update({'stock': stock});
+
+  /// Panes ya apartados por día (lo lleva el servidor), en vivo.
+  Stream<Map<String, DayStock>> dayStocks({required String fromDate}) => _db
+      .collection('dayStock')
+      .where(FieldPath.documentId, isGreaterThanOrEqualTo: fromDate)
+      .snapshots()
+      .map((s) => {for (final d in s.docs) d.id: DayStock.fromMap(d.id, d.data())});
 
   /// Al empezar a repartir: ya no se aceptan pedidos para ese día.
   Future<void> closeDeliveryDay(String date) =>
       _db.collection('deliveryDays').doc(date).update({'closed': true});
+
+  /// Mueve un día a otra fecha y/o le cambia el horario. Sus pedidos y su cupo
+  /// se pasan solos y a cada cliente le llega un aviso. Regresa cuántos se avisaron.
+  Future<int> moveDeliveryDay({
+    required String from,
+    required String to,
+    required List<String> slots,
+    int slotMinutes = 60,
+  }) async {
+    try {
+      final r = await FirebaseFunctions.instance.httpsCallable('moverDia').call<Map<Object?, Object?>>({
+        'from': from,
+        'to': to,
+        'slots': slots,
+        'slotMinutes': slotMinutes,
+      });
+      return (r.data['moved'] as num?)?.toInt() ?? 0;
+    } on FirebaseFunctionsException catch (e) {
+      throw RejectedByServer(e.message ?? 'No se pudo mover el día.');
+    }
+  }
 
   Future<void> deleteDeliveryDay(String date) =>
       _db.collection('deliveryDays').doc(date).delete();
@@ -99,10 +142,34 @@ class Repo {
 
   Future<String> paymentProofUrl(String path) => _storage.ref(path).getDownloadURL();
 
-  Future<void> createOrder(BakeryOrder o) => _db.collection('orders').add({
-        ...o.toNewOrderMap(),
-        'createdAt': FieldValue.serverTimestamp(),
-      });
+  /// Hace el pedido en el servidor: ahí se revisa y se aparta el cupo en un solo
+  /// paso, así dos personas pidiendo al mismo tiempo no pueden pasarse del cupo.
+  /// Si ya no alcanza, lanza [RejectedByServer] con el motivo para el cliente.
+  Future<void> createOrder(BakeryOrder o) async {
+    try {
+      await FirebaseFunctions.instance.httpsCallable('hacerPedido').call<void>(o.toNewOrderMap());
+    } on FirebaseFunctionsException catch (e) {
+      if (const ['resource-exhausted', 'failed-precondition', 'invalid-argument'].contains(e.code)) {
+        throw RejectedByServer(e.message ?? 'Ya no hay cupo para ese día.');
+      }
+      rethrow;
+    }
+  }
+
+  /// Borra el pedido para siempre: desaparece también en el celular del cliente
+  /// y su lugar en el cupo del día se libera.
+  Future<void> deleteOrder(String id) => _db.collection('orders').doc(id).delete();
+
+  /// Borra varios pedidos de un jalón (por ejemplo, los de prueba).
+  Future<void> deleteOrders(List<String> ids) async {
+    for (var i = 0; i < ids.length; i += 200) {
+      final batch = _db.batch();
+      for (final id in ids.skip(i).take(200)) {
+        batch.delete(_db.collection('orders').doc(id));
+      }
+      await batch.commit();
+    }
+  }
 
   Stream<List<BakeryOrder>> myOrders(String uid) => _db
       .collection('orders')
@@ -171,4 +238,13 @@ class Repo {
       });
 
   String get currentUid => FirebaseAuth.instance.currentUser!.uid;
+}
+
+/// El servidor no aceptó la acción (por ejemplo, ya no hay cupo). [message] es para la persona.
+class RejectedByServer implements Exception {
+  final String message;
+  const RejectedByServer(this.message);
+
+  @override
+  String toString() => message;
 }
