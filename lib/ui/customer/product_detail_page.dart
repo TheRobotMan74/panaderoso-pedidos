@@ -29,13 +29,7 @@ class ProductDetailPage extends StatelessWidget {
               ListView(
                 padding: EdgeInsets.zero,
                 children: [
-                  Hero(
-                    tag: 'producto-${product.id}',
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(36)),
-                      child: ProductImage(url: product.imageUrl, name: product.name, size: width),
-                    ),
-                  ),
+                  ProductHero(product: product, size: width, big: true),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(22, 22, 22, 140),
                     child: Column(

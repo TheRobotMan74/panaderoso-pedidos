@@ -43,37 +43,42 @@ class OrdersPage extends StatelessWidget {
             lastDate = o.deliveryDate;
             lastSlot = null;
             final count = orders.where((x) => x.deliveryDate == o.deliveryDate).length;
-            children.add(SectionTitle(
-              capitalize(dayLabel(o.deliveryDate)),
-              trailing: Text('$count ${count == 1 ? 'pedido' : 'pedidos'}',
-                  style: Theme.of(context).textTheme.bodySmall),
-            ));
+            children.add(
+              SectionTitle(
+                capitalize(dayLabel(o.deliveryDate)),
+                trailing: Text(
+                  '$count ${count == 1 ? 'pedido' : 'pedidos'}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            );
           }
           if (o.slot != lastSlot) {
             lastSlot = o.slot;
-            children.add(Padding(
-              padding: const EdgeInsets.fromLTRB(2, 6, 2, 4),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Pan.harina,
-                      borderRadius: BorderRadius.circular(12),
+            children.add(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 6, 2, 4),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: Pan.harina, borderRadius: BorderRadius.circular(12)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.schedule_rounded, size: 14, color: Pan.tostado),
+                          const SizedBox(width: 4),
+                          Text(
+                            slotLabel(o.slot),
+                            style: const TextStyle(fontWeight: FontWeight.w800, color: Pan.tostado),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.schedule_rounded, size: 14, color: Pan.tostado),
-                        const SizedBox(width: 4),
-                        Text(slotLabel(o.slot),
-                            style: const TextStyle(fontWeight: FontWeight.w800, color: Pan.tostado)),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ));
+            );
           }
           children.add(_OrderCard(key: ValueKey(o.id), order: o));
         }
@@ -123,9 +128,7 @@ class _OrderCard extends StatelessWidget {
   /// Abre Google Maps con la ruta a la casa del cliente.
   Future<void> _directions() async {
     final o = order;
-    final dest = o.hasLocation
-        ? '${o.lat},${o.lng}'
-        : Uri.encodeComponent('${o.address}, México');
+    final dest = o.hasLocation ? '${o.lat},${o.lng}' : Uri.encodeComponent('${o.address}, México');
     await launchUrl(
       Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dest&travelmode=driving'),
       mode: LaunchMode.externalApplication,
@@ -160,132 +163,143 @@ class _OrderCard extends StatelessWidget {
       padding: EdgeInsets.zero,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(Pan.radio),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Franja de color según el estado.
-              AnimatedContainer(
-                duration: Motion.of(context, Motion.medio),
-                width: 6,
-                color: accent,
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          children: [
+            // Franja de color según el estado (toma el alto de la tarjeta).
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: AnimatedContainer(duration: Motion.of(context, Motion.medio), width: 6, color: accent),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(child: Text(o.customerName, style: theme.textTheme.titleMedium)),
-                          StatusChip(status: o.status),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      _line(Icons.place_outlined, o.address, theme.textTheme.bodyMedium!),
-                      if (o.addressNotes.isNotEmpty)
-                        _line(Icons.sticky_note_2_outlined, o.addressNotes, theme.textTheme.bodySmall!),
-                      _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: true),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: [
-                          for (final it in o.items)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFFF4D6),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text('${productArt(it.name).$1} ${it.qty} ${it.name}',
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                            ),
-                        ],
-                      ),
-                      if (o.notes.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text('📝 ${o.notes}', style: theme.textTheme.bodySmall),
-                      ],
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Text(money(o.total),
-                              style: theme.textTheme.titleLarge!.copyWith(color: Pan.caramelo, fontSize: 19)),
-                          const SizedBox(width: 10),
-                          Icon(isCash ? Icons.payments_rounded : Icons.account_balance_rounded,
-                              size: 17, color: Pan.canela),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              isCash
-                                  ? (o.cashCollected ? 'Efectivo, cobrado' : 'Efectivo, por cobrar')
-                                  : (o.paymentVerified ? 'Transferencia verificada' : 'Transferencia por revisar'),
-                              style: theme.textTheme.bodySmall,
-                            ),
+                      Expanded(child: Text(o.customerName, style: theme.textTheme.titleMedium)),
+                      StatusChip(status: o.status),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  _line(Icons.place_outlined, o.address, theme.textTheme.bodyMedium!),
+                  if (o.addressNotes.isNotEmpty)
+                    _line(Icons.sticky_note_2_outlined, o.addressNotes, theme.textTheme.bodySmall!),
+                  _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: true),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final it in o.items)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF4D6),
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                        ],
+                          child: Text(
+                            '${productArt(it.name).$1} ${it.qty} ${it.name}',
+                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (o.notes.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('📝 ${o.notes}', style: theme.textTheme.bodySmall),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Text(
+                        money(o.total),
+                        style: theme.textTheme.titleLarge!.copyWith(color: Pan.caramelo, fontSize: 19),
                       ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        children: [
-                          if (next != null)
-                            FilledButton(
-                              onPressed: () {
-                                HapticFeedback.lightImpact();
-                                Repo.instance.updateOrder(o.id, {'status': next.$1.name});
-                              },
-                              style: FilledButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
-                              child: Text(next.$2),
-                            ),
-                          if (o.status != OrderStatus.entregado)
-                            OutlinedButton.icon(
-                              onPressed: _directions,
-                              icon: const Icon(Icons.directions_rounded, size: 18),
-                              label: const Text('Cómo llegar'),
-                            ),
-                          if (!isCash && o.paymentProofPath != null)
-                            OutlinedButton(onPressed: () => _showProof(context), child: const Text('Ver captura')),
-                          if (isCash && !o.cashCollected)
-                            OutlinedButton(
-                              onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
-                              child: const Text('Cobrado'),
-                            ),
-                          if (o.status != OrderStatus.entregado)
-                            TextButton(
-                              onPressed: () => _cancel(context),
-                              style: TextButton.styleFrom(foregroundColor: Pan.terracota),
-                              child: const Text('Cancelar'),
-                            ),
-                        ],
+                      const SizedBox(width: 10),
+                      Icon(
+                        isCash ? Icons.payments_rounded : Icons.account_balance_rounded,
+                        size: 17,
+                        color: Pan.canela,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          isCash
+                              ? (o.cashCollected ? 'Efectivo, cobrado' : 'Efectivo, por cobrar')
+                              : (o.paymentVerified
+                                    ? 'Transferencia verificada'
+                                    : 'Transferencia por revisar'),
+                          style: theme.textTheme.bodySmall,
+                        ),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      if (next != null)
+                        FilledButton(
+                          onPressed: () {
+                            HapticFeedback.lightImpact();
+                            Repo.instance.updateOrder(o.id, {'status': next.$1.name});
+                          },
+                          style: FilledButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                          child: Text(next.$2),
+                        ),
+                      if (o.status != OrderStatus.entregado)
+                        OutlinedButton.icon(
+                          onPressed: _directions,
+                          icon: const Icon(Icons.directions_rounded, size: 18),
+                          label: const Text('Cómo llegar'),
+                        ),
+                      if (!isCash && o.paymentProofPath != null)
+                        OutlinedButton(
+                          onPressed: () => _showProof(context),
+                          child: const Text('Ver captura'),
+                        ),
+                      if (isCash && !o.cashCollected)
+                        OutlinedButton(
+                          onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
+                          child: const Text('Cobrado'),
+                        ),
+                      if (o.status != OrderStatus.entregado)
+                        TextButton(
+                          onPressed: () => _cancel(context),
+                          style: TextButton.styleFrom(foregroundColor: Pan.terracota),
+                          child: const Text('Cancelar'),
+                        ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
   Widget _line(IconData icon, String text, TextStyle style, {bool selectable = false}) => Padding(
-        padding: const EdgeInsets.only(top: 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Icon(icon, size: 15, color: Pan.canela),
-            ),
-            const SizedBox(width: 6),
-            Expanded(child: selectable ? SelectableText(text, style: style) : Text(text, style: style)),
-          ],
+    padding: const EdgeInsets.only(top: 2),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 15, color: Pan.canela),
         ),
-      );
+        const SizedBox(width: 6),
+        Expanded(
+          child: selectable ? SelectableText(text, style: style) : Text(text, style: style),
+        ),
+      ],
+    ),
+  );
 }

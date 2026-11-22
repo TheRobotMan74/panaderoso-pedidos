@@ -1,5 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../models.dart';
+
 /// Foto del producto. Si no tiene foto, un dibujito del pan sobre un fondo cálido.
 class ProductImage extends StatelessWidget {
   final String? url;
@@ -91,4 +93,42 @@ class _Placeholder extends StatelessWidget {
   if (n.contains('croissant') || n.contains('cuerno')) return ('🥐', miel);
   if (n.contains('baguette') || n.contains('bolillo') || n.contains('telera')) return ('🥖', miel);
   return ('🍞', miel);
+}
+
+/// Foto del pan que "vuela" de la lista al detalle (Hero): crece y sus esquinas
+/// pasan de redondas (lista) a solo abajo (detalle), sin saltos.
+class ProductHero extends StatelessWidget {
+  final Product product;
+  final double size;
+
+  /// true en la pantalla de detalle (foto grande arriba).
+  final bool big;
+  const ProductHero({super.key, required this.product, required this.size, this.big = false});
+
+  static const _listRadius = BorderRadius.all(Radius.circular(18));
+  static const _bigRadius = BorderRadius.vertical(bottom: Radius.circular(36));
+
+  @override
+  Widget build(BuildContext context) => Hero(
+        tag: 'producto-${product.id}',
+        flightShuttleBuilder: (flightContext, animation, direction, fromContext, toContext) {
+          // La foto del tamaño grande, escalada al rectángulo que va volando.
+          final full = MediaQuery.sizeOf(flightContext).width;
+          return AnimatedBuilder(
+            animation: animation,
+            builder: (context, child) => ClipRRect(
+              borderRadius: BorderRadius.lerp(_listRadius, _bigRadius, animation.value)!,
+              child: child,
+            ),
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: ProductImage(url: product.imageUrl, name: product.name, size: full),
+            ),
+          );
+        },
+        child: ClipRRect(
+          borderRadius: big ? _bigRadius : _listRadius,
+          child: ProductImage(url: product.imageUrl, name: product.name, size: size),
+        ),
+      );
 }
