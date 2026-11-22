@@ -415,3 +415,105 @@ exports.moverDia = onCall(async (req) => {
   }
   return { moved: avisos.length };
 });
+
+// ---------------------------------------------------------------------------
+// Correo bonito para recuperar la contraseña
+// ---------------------------------------------------------------------------
+// Se manda desde el Gmail de la panadería con el diseño de functions/correo.js.
+// El Gmail y su "contraseña de aplicación" se guardan como secretos:
+//   firebase functions:secrets:set CORREO_GMAIL
+//   firebase functions:secrets:set CLAVE_GMAIL
+// Si algo falla, la app manda el correo normal de Firebase (en español).
+const { defineSecret } = require('firebase-functions/params');
+const { getAuth } = require('firebase-admin/auth');
+const nodemailer = require('nodemailer');
+const crypto = require('node:crypto');
+const path = require('node:path');
+const { correoRecuperacion } = require('./correo');
+
+const correoGmail = defineSecret('CORREO_GMAIL');
+const claveGmail = defineSecret('CLAVE_GMAIL');
+
+// Para que nadie use esto para llenar de correos a alguien (y Gmail no bloquee la cuenta).
+const MAX_POR_CORREO_POR_HORA = 3;
+const MAX_POR_DIA = 300; // Gmail gratis permite unos 500 al día.
+
+exports.mandarRecuperacion = onCall({ secrets: [correoGmail, claveGmail] }, async (req) => {
+  const email = String((req.data && req.data.email) || '').trim().toLowerCase();
+  if (email.length > 200 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    throw new HttpsError('invalid-argument', 'El correo no es válido.');
+  }
+
+  // Si no hay cuenta con ese correo no se manda nada, y no se dice, para no revelar quién tiene cuenta.
+  let usuario;
+  try {
+    usuario = await getAuth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code === 'auth/user-not-found') return { ok: true };
+    console.error('No se pudo buscar la cuenta', e);
+    throw new HttpsError('internal', 'No se pudo buscar la cuenta.');
+  }
+
+  const db = getFirestore();
+  const refCorreo = db.collection('limitesCorreo')
+    .doc(crypto.createHash('sha256').update(email).digest('hex'));
+  const refDia = db.collection('limitesCorreo').doc(`dia-${new Date().toISOString().slice(0, 10)}`);
+  const permiso = await db.runTransaction(async (tx) => {
+    const [porCorreo, porDia] = await tx.getAll(refCorreo, refDia);
+    const ahora = Date.now();
+    const recientes = (porCorreo.get('envios') || []).filter((t) => ahora - t < 3600 * 1000);
+    if (recientes.length >= MAX_POR_CORREO_POR_HORA) return 'ya-se-mando';
+    if ((porDia.get('total') || 0) >= MAX_POR_DIA) return 'limite-del-dia';
+    tx.set(refCorreo, { envios: [...recientes, ahora] });
+    tx.set(refDia, { total: FieldValue.increment(1) }, { merge: true });
+    return 'ok';
+  });
+  // Ya se le mandaron varios en la última hora: no se manda otro, pero tampoco se dice nada.
+  if (permiso === 'ya-se-mando') return { ok: true };
+  // Muchos en el día: que la app mande el correo normal de Firebase.
+  if (permiso === 'limite-del-dia') throw new HttpsError('resource-exhausted', 'Muchos correos hoy.');
+
+  let enlace;
+  try {
+    enlace = new URL(await getAuth().generatePasswordResetLink(email));
+  } catch (e) {
+    console.error('No se pudo crear el enlace', e);
+    throw new HttpsError('internal', 'No se pudo crear el enlace.');
+  }
+  enlace.searchParams.set('lang', 'es'); // la página para poner la contraseña, en español
+
+  // Saludo con su nombre, si lo tiene en su perfil.
+  let nombre = '';
+  try {
+    const perfil = await db.collection('users').doc(usuario.uid).get();
+    nombre = String(perfil.get('name') || '').trim().split(/\s+/)[0].slice(0, 40);
+  } catch (_) { /* sin nombre */ }
+
+  const { subject, html, text } = correoRecuperacion({ nombre, enlace: enlace.toString() });
+  const prueba = process.env.FUNCTIONS_EMULATOR === 'true';
+  const remitente = (correoGmail.value() || '').trim() || 'panaderoso@example.com';
+  const transporte = prueba
+    ? nodemailer.createTransport({ jsonTransport: true })
+    : nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: remitente, pass: (claveGmail.value() || '').replace(/\s/g, '') },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 20000,
+    });
+  try {
+    const info = await transporte.sendMail({
+      from: { name: 'Panaderoso', address: remitente },
+      to: email,
+      subject,
+      html,
+      text,
+      attachments: [{ filename: 'oso.png', path: path.join(__dirname, 'imagenes', 'oso.png'), cid: 'oso' }],
+    });
+    if (prueba) console.log('CORREO_DE_PRUEBA', info.message);
+  } catch (e) {
+    console.error('No se pudo mandar el correo con Gmail', e);
+    throw new HttpsError('unavailable', 'No se pudo mandar el correo.');
+  }
+  return { ok: true };
+});

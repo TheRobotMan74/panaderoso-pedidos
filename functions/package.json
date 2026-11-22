@@ -1,11 +1,12 @@
 {
   "name": "panaderoso-functions",
   "private": true,
-  "description": "Avisos (notificaciones) de pedidos de Panaderoso",
+  "description": "Avisos, cupos y correos de Panaderoso",
   "main": "index.js",
   "engines": { "node": "22" },
   "dependencies": {
     "firebase-admin": "^13.0.0",
-    "firebase-functions": "^6.0.0"
+    "firebase-functions": "^6.0.0",
+    "nodemailer": "10.3.1"
   }
 }

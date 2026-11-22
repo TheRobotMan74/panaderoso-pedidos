@@ -61,6 +61,20 @@ crear otra y reemplazar el secreto.
 8. Hazte dueño: crea tu cuenta en la app, y en Firestore abre `users/<tu id>` y agrega el campo
    `role` con el valor `dueno`. Cierra y abre la app.
 
+## Correo para cambiar la contraseña
+
+"Olvidé mi contraseña" manda un correo con el oso y los colores de la app (`functions/correo.js`),
+desde el Gmail de la panadería. Necesita dos secretos de Firebase (no van en el código):
+
+```sh
+firebase functions:secrets:set CORREO_GMAIL   # el Gmail de la panadería
+firebase functions:secrets:set CLAVE_GMAIL    # su "contraseña de aplicación" de 16 letras
+```
+
+La contraseña de aplicación se crea en <https://myaccount.google.com/apppasswords>
+(pide tener activada la verificación en dos pasos). Si el Gmail falla, la app manda
+el correo normal de Firebase, también en español.
+
 ## Firma de la APK
 
 Para que cada APK nueva se instale encima de la anterior, GitHub firma con una llave fija.

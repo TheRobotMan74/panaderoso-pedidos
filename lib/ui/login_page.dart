@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../services/repo.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -17,6 +18,7 @@ class _LoginPageState extends State<LoginPage> {
   final _password = TextEditingController();
   bool _creating = false;
   bool _busy = false;
+  bool _sendingReset = false;
   String? _error;
 
   Future<void> _submit() async {
@@ -46,14 +48,20 @@ class _LoginPageState extends State<LoginPage> {
       setState(() => _error = 'Escribe tu correo para mandarte el enlace.');
       return;
     }
+    setState(() {
+      _sendingReset = true;
+      _error = null;
+    });
     try {
-      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      await Repo.instance.sendPasswordReset(email);
     } on FirebaseAuthException catch (e) {
       // Si el correo no existe no se dice nada, para no revelar quién tiene cuenta.
       if (e.code != 'user-not-found') {
-        setState(() => _error = _message(e.code));
+        if (mounted) setState(() => _error = _message(e.code));
         return;
       }
+    } finally {
+      if (mounted) setState(() => _sendingReset = false);
     }
     if (!mounted) return;
     setState(() => _error = null);
@@ -167,7 +175,10 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                           const SizedBox(height: 4),
                           if (!_creating)
-                            TextButton(onPressed: _resetPassword, child: const Text('Olvidé mi contraseña')),
+                            TextButton(
+                              onPressed: _sendingReset ? null : _resetPassword,
+                              child: Text(_sendingReset ? 'Mandando el correo…' : 'Olvidé mi contraseña'),
+                            ),
                         ],
                       ),
                     ),
