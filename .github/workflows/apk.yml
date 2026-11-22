@@ -114,13 +114,17 @@ jobs:
         env:
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
         run: |
+          # shorebird init necesita android/gradlew, que no se guarda en el repo:
+          # Flutter lo genera sin armar nada con --config-only.
+          flutter build apk --config-only
           shorebird init --display-name "Panaderoso"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git status --short
           git add shorebird.yaml pubspec.yaml
           git commit -m "Conectar la app con Shorebird (shorebird.yaml)"
           for intento in 1 2 3; do
-            if git pull --rebase origin main && git push origin HEAD:main; then
+            if git pull --rebase --autostash origin main && git push origin HEAD:main; then
               echo "nueva=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
