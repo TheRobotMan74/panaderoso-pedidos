@@ -291,7 +291,7 @@ class _StopRow extends StatelessWidget {
                   spacing: 8,
                   children: [
                     Text(
-                      slotLabel(order.slot),
+                      slotLabel(order.slot, minutes: order.slotMinutes),
                       style: theme.textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w700, color: color),
                     ),
                     if (!order.hasLocation) Text('· sin casa en el mapa', style: theme.textTheme.bodySmall),

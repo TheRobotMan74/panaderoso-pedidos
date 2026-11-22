@@ -262,6 +262,9 @@ class BakeryOrder {
   /// Piezas compradas que cuentan para la tarjeta de lealtad. Solo lo traen los
   /// pedidos hechos desde que salió la promoción (null en los de antes).
   final int? loyaltyPieces;
+  /// Duración del horario en minutos (la pone el servidor al pedir o mover; antes siempre era 60).
+  final int slotMinutes;
+  final int movedFromMinutes;
 
   const BakeryOrder({
     required this.id,
@@ -287,6 +290,8 @@ class BakeryOrder {
     this.movedFromDate,
     this.movedFromSlot,
     this.loyaltyPieces,
+    this.slotMinutes = 60,
+    this.movedFromMinutes = 60,
   });
 
   bool get wasMoved => movedFromDate != null;
@@ -337,6 +342,8 @@ class BakeryOrder {
         movedFromDate: (m['movedFrom'] as Map?)?['date'] as String?,
         movedFromSlot: (m['movedFrom'] as Map?)?['slot'] as String?,
         loyaltyPieces: (m['lealtadPiezas'] as num?)?.toInt(),
+        slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
+        movedFromMinutes: ((m['movedFrom'] as Map?)?['slotMinutes'] as num?)?.toInt() ?? 60,
       );
 
   /// Datos que escribe el cliente al crear el pedido.

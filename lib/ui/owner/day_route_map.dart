@@ -113,7 +113,7 @@ class _DayRouteMapState extends State<DayRouteMap> {
         zIndexInt: done ? 1 : 2,
         infoWindow: InfoWindow(
           title: '${i + 1}. ${o.customerName}',
-          snippet: '${slotLabel(o.slot)} · ${o.pieces} pzas${done ? ' · entregado' : ''}',
+          snippet: '${slotLabel(o.slot, minutes: o.slotMinutes)} · ${o.pieces} pzas${done ? ' · entregado' : ''}',
         ),
       ));
     }
@@ -284,7 +284,8 @@ class _DayRouteMapState extends State<DayRouteMap> {
                     decoration: BoxDecoration(color: colorForSlot(slots, s), shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 4),
-                  Text(slotLabel(s), style: theme.textTheme.bodySmall),
+                  Text(slotLabel(s, minutes: widget.stops.firstWhere((o) => o.slot == s).slotMinutes),
+                      style: theme.textTheme.bodySmall),
                 ],
               ),
           ],
