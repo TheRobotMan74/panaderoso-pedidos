@@ -8,9 +8,9 @@ class WebConfig {
 
   /// Llave de Google Maps para páginas web (Maps JavaScript API).
   /// Vacía = la web funciona igual, pero sin mapa (se busca la dirección con texto).
-  static const mapsKey = '';
+  static const mapsKey = 'AIzaSyBkyZJRff5w2wfP7gxGrETZd3DBAJIpTGY';
 
   /// Llave de reCAPTCHA Enterprise para App Check en la web.
   /// Vacía = la web no manda "pase" de App Check (en modo monitoreo no pasa nada).
-  static const recaptchaSiteKey = '';
+  static const recaptchaSiteKey = '6Lc47CwuAAAAAAB71MuU1vuX24SG9cmiXes_dDPu';
 }
