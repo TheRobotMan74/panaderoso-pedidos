@@ -34,6 +34,24 @@ class Repo {
         'fcmTokens': FieldValue.arrayUnion([token]),
       }, SetOptions(merge: true));
 
+  /// Manda el correo para cambiar la contraseña. Primero intenta el correo bonito
+  /// de Panaderoso (sale del Gmail de la panadería, función "mandarRecuperacion").
+  /// Si el servidor no puede, manda el correo normal de Firebase, que también llega en español.
+  /// Lanza [FirebaseAuthException] si el correo no es válido o no hay internet.
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('mandarRecuperacion', options: HttpsCallableOptions(timeout: const Duration(seconds: 20)))
+          .call<void>({'email': email});
+      return;
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'invalid-argument') throw FirebaseAuthException(code: 'invalid-email');
+    } catch (_) {
+      // Cualquier otra falla se resuelve abajo con el correo de Firebase.
+    }
+    await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+  }
+
   // ---------- Productos ----------
 
   Stream<List<Product>> products({bool onlyAvailable = false}) =>

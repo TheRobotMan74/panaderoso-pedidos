@@ -50,3 +50,6 @@ app.*.map.json
 # Firebase Functions
 functions/node_modules/
 .firebase/
+
+# Secretos para probar las funciones en la compu (nunca se suben)
+functions/.secret.local
