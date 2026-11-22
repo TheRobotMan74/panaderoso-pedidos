@@ -125,6 +125,30 @@ async function avisarCliente(uid, title, body) {
 }
 
 // Distancia en metros, en línea recta (haversine). Igual que lib/logic/geo.dart.
+// Costo de envío: igual que ShippingRules.feeForTrip en lib/logic/shipping.dart.
+// km de ida (línea recta × roadFactor) × precio por km × parte que paga el cliente
+// según piezas, redondeado hacia arriba a múltiplos de roundTo. 0 si está apagado
+// o falta el punto de salida o la casa.
+function costoEnvio(config, lat, lng, piezas) {
+  const r = config.shipping || {};
+  const baseLat = config.baseLat;
+  const baseLng = config.baseLng;
+  if (r.enabled !== true || piezas <= 0) return 0;
+  if (typeof baseLat !== 'number' || typeof baseLng !== 'number' || lat === null || lng === null) return 0;
+  const porKm = typeof r.pricePerKm === 'number' ? r.pricePerKm : 2.8;
+  const factor = typeof r.roadFactor === 'number' ? r.roadFactor : 1.3;
+  const redondeo = typeof r.roundTo === 'number' && r.roundTo > 0 ? Math.round(r.roundTo) : 5;
+  let rangos = Array.isArray(r.tiers) && r.tiers.length ? r.tiers
+    : [{ minPieces: 1, customerShare: 1 }, { minPieces: 2, customerShare: 0.25 }, { minPieces: 6, customerShare: 0 }];
+  rangos = [...rangos].sort((a, b) => a.minPieces - b.minPieces);
+  let parte = 1;
+  for (const t of rangos) if (piezas >= t.minPieces) parte = t.customerShare;
+  const km = distanciaMetros(baseLat, baseLng, lat, lng) / 1000 * factor;
+  const bruto = km * porKm * parte;
+  if (!(bruto > 0)) return 0;
+  return Math.min(10000, Math.ceil((bruto - 1e-9) / redondeo) * redondeo);
+}
+
 function distanciaMetros(lat1, lng1, lat2, lng2) {
   const rad = (d) => d * Math.PI / 180;
   const dLat = rad(lat2 - lat1);
@@ -187,6 +211,8 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
   const dayRef = db.collection('deliveryDays').doc(date);
   const stockRef = db.collection('dayStock').doc(date);
   const orderRef = db.collection('orders').doc();
+  // El envío lo calcula el servidor (lo que mande el celular no cuenta).
+  const config = (await db.collection('config').doc('app').get()).data() || {};
 
   await db.runTransaction(async (tx) => {
     const day = await tx.get(dayRef);
@@ -238,7 +264,7 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
 
     const pieces = items.reduce((s, i) => s + i.qty, 0);
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-    const shippingFee = Math.max(0, Math.min(10000, Math.round(Number(d.shippingFee) || 0)));
+    const shippingFee = costoEnvio(config, numeroONull(d.lat), numeroONull(d.lng), pieces);
 
     tx.set(stockRef, { used, updatedAt: FieldValue.serverTimestamp() });
     tx.create(orderRef, {

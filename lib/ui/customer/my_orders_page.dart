@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../logic/schedule.dart';
 import '../../models.dart';
@@ -38,12 +39,20 @@ class MyOrdersPage extends StatelessWidget {
             message: 'Cuando pidas tu pan, aquí verás cómo va, paso a paso.',
           );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          itemCount: orders.length,
-          itemBuilder: (context, i) => FadeSlideIn(
-            index: i,
-            child: _OrderCard(order: orders[i], homeLat: homeLat, homeLng: homeLng),
+        return StreamBuilder<AppConfig>(
+          stream: Repo.instance.config(),
+          builder: (context, cfg) => ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            itemCount: orders.length,
+            itemBuilder: (context, i) => FadeSlideIn(
+              index: i,
+              child: _OrderCard(
+                order: orders[i],
+                homeLat: homeLat,
+                homeLng: homeLng,
+                whatsapp: cfg.data?.whatsapp ?? '',
+              ),
+            ),
           ),
         );
       },
@@ -55,7 +64,22 @@ class _OrderCard extends StatelessWidget {
   final BakeryOrder order;
   final double? homeLat;
   final double? homeLng;
-  const _OrderCard({required this.order, this.homeLat, this.homeLng});
+
+  /// WhatsApp de la panadería ('' = sin botón).
+  final String whatsapp;
+  const _OrderCard({required this.order, this.homeLat, this.homeLng, this.whatsapp = ''});
+
+  Future<void> _openWhatsApp(BuildContext context) async {
+    final o = order;
+    final text = 'Hola Panaderoso 🐻, soy ${o.customerName}. Te escribo por mi pedido del '
+        '${dayLabel(o.deliveryDate)} (${slotLabel(o.slot)}).';
+    final ok = await launchUrl(whatsAppUrl(whatsapp, text), mode: LaunchMode.externalApplication)
+        .catchError((_) => false);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir WhatsApp. ¿Lo tienes instalado?')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +146,18 @@ class _OrderCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                if (o.shippingFee > 0)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        const Text('🛵', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('Envío', style: theme.textTheme.bodyMedium)),
+                        Text(money(o.shippingFee), style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
@@ -141,6 +177,17 @@ class _OrderCard extends StatelessWidget {
                   style: theme.textTheme.titleLarge!.copyWith(color: Pan.caramelo, fontSize: 19)),
             ],
           ),
+          if (whatsapp.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => _openWhatsApp(context),
+                icon: const Icon(Icons.chat_rounded, size: 20),
+                label: const Text('Escríbenos por WhatsApp'),
+              ),
+            ),
+          ],
           if (canTrack) ...[
             const SizedBox(height: 12),
             HoneyButton(
@@ -200,4 +247,11 @@ class _MovedNotice extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Enlace de WhatsApp con mensaje ya escrito. Acepta el número con o sin 52, espacios o guiones.
+Uri whatsAppUrl(String number, String text) {
+  var digits = number.replaceAll(RegExp(r'\D'), '');
+  if (digits.length == 10) digits = '52$digits';
+  return Uri.https('wa.me', '/$digits', {'text': text});
 }
