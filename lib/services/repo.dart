@@ -122,6 +122,12 @@ class Repo {
       .snapshots()
       .map((s) => AppConfig.fromMap(s.data()));
 
+  /// Guarda el punto de salida del reparto sin tocar lo demás.
+  Future<void> saveBaseLocation(double lat, double lng) => _db
+      .collection('config')
+      .doc('app')
+      .set({'baseLat': lat, 'baseLng': lng}, SetOptions(merge: true));
+
   Future<void> saveConfig(AppConfig c) =>
       _db.collection('config').doc('app').set(c.toMap());
 
@@ -153,6 +159,17 @@ class Repo {
   /// Borra el pedido para siempre: desaparece también en el celular del cliente
   /// y su lugar en el cupo del día se libera.
   Future<void> deleteOrder(String id) => _db.collection('orders').doc(id).delete();
+
+  /// Borra varios pedidos de un jalón (por ejemplo, los de prueba).
+  Future<void> deleteOrders(List<String> ids) async {
+    for (var i = 0; i < ids.length; i += 200) {
+      final batch = _db.batch();
+      for (final id in ids.skip(i).take(200)) {
+        batch.delete(_db.collection('orders').doc(id));
+      }
+      await batch.commit();
+    }
+  }
 
   Stream<List<BakeryOrder>> myOrders(String uid) => _db
       .collection('orders')

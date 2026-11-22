@@ -22,7 +22,15 @@ class PickedLocation {
 class LocationPickerPage extends StatefulWidget {
   final double? lat;
   final double? lng;
-  const LocationPickerPage({super.key, this.lat, this.lng});
+  final String title;
+  final String confirmLabel;
+  const LocationPickerPage({
+    super.key,
+    this.lat,
+    this.lng,
+    this.title = '¿Dónde te llevamos el pan?',
+    this.confirmLabel = 'Aquí es mi casa',
+  });
 
   @override
   State<LocationPickerPage> createState() => _LocationPickerPageState();
@@ -132,7 +140,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('¿Dónde te llevamos el pan?')),
+      appBar: AppBar(title: Text(widget.title)),
       body: Stack(
         children: [
           GoogleMap(
@@ -262,7 +270,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                                 context, PickedLocation(_center.latitude, _center.longitude, _address))
                             : null,
                         icon: Icons.check_rounded,
-                        label: 'Aquí es mi casa',
+                        label: widget.confirmLabel,
                       ),
                     ],
                   ),

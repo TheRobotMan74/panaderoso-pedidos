@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:panaderoso_pedidos/logic/demand.dart';
 import 'package:panaderoso_pedidos/logic/geo.dart';
+import 'package:panaderoso_pedidos/logic/route.dart';
 import 'package:panaderoso_pedidos/logic/schedule.dart';
 import 'package:panaderoso_pedidos/logic/shipping.dart';
 import 'package:panaderoso_pedidos/logic/stock.dart';
@@ -220,6 +221,37 @@ void main() {
       expect(o.wasMoved, true);
       expect(o.movedFromDate, '2026-11-23');
       expect(Product.fromMap('p', {'name': 'Donas'}).stockGroup, '');
+    });
+  });
+
+  group('Ruta del día', () {
+    // Casas sobre una misma calle (este-oeste), ~110 m entre cada una.
+    (String, String, Point?) casa(String id, String slot, double x) => (id, slot, (19.0, -99.0 + x * 0.001));
+
+    List<String> ids(List<(String, String, Point?)> r) => r.map((e) => e.$1).toList();
+
+    test('va de la más cercana a la más lejana desde la salida', () {
+      final stops = [casa('c', '08:00', 3), casa('a', '08:00', 1), casa('d', '08:00', 4), casa('b', '08:00', 2)];
+      final r = routeOrder(stops, slot: (e) => e.$2, position: (e) => e.$3, start: (19.0, -99.0));
+      expect(ids(r), ['a', 'b', 'c', 'd']);
+    });
+
+    test('respeta los horarios aunque otra casa esté más cerca', () {
+      final stops = [casa('lejos8', '08:00', 9), casa('cerca9', '09:00', 1), casa('medio8', '08:00', 5)];
+      final r = routeOrder(stops, slot: (e) => e.$2, position: (e) => e.$3, start: (19.0, -99.0));
+      expect(ids(r), ['medio8', 'lejos8', 'cerca9']);
+    });
+
+    test('sin casa marcada va al final de su horario', () {
+      final stops = [('sin', '08:00', null), casa('a', '08:00', 1), casa('b', '09:00', 2)];
+      final r = routeOrder<(String, String, Point?)>(stops, slot: (e) => e.$2, position: (e) => e.$3);
+      expect(ids(r), ['a', 'sin', 'b']);
+    });
+
+    test('sin punto de salida empieza por una orilla', () {
+      final stops = [casa('c', '08:00', 3), casa('a', '08:00', 1), casa('b', '08:00', 2)];
+      final r = routeOrder(stops, slot: (e) => e.$2, position: (e) => e.$3);
+      expect(ids(r), anyOf([equals(['a', 'b', 'c']), equals(['c', 'b', 'a'])]));
     });
   });
 }
