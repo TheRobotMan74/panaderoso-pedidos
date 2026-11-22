@@ -1,0 +1,139 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../logic/schedule.dart';
+import '../models.dart';
+import 'repo.dart';
+
+/// Reparto en vivo del dueño: comparte su ubicación mientras reparte.
+///
+/// Usa un "servicio en primer plano" de Android: aparece una notificación fija
+/// mientras se comparte, y así sigue funcionando con la pantalla apagada o en
+/// otra app (Maps, WhatsApp) sin pedir el permiso de ubicación "todo el tiempo".
+///
+/// Para cuidar batería y la cuota gratis de Firebase, solo se escribe cuando el
+/// carro avanza unos 30 m, y como mucho una vez cada 10 segundos.
+class DeliveryTracker extends ChangeNotifier {
+  DeliveryTracker._();
+  static final instance = DeliveryTracker._();
+
+  static const _minWriteGap = Duration(seconds: 10);
+
+  StreamSubscription<Position>? _positions;
+  StreamSubscription<List<BakeryOrder>>? _orders;
+  DateTime _lastWrite = DateTime(2000);
+  List<String> _viewers = [];
+
+  /// Se llama cuando el reparto termina solo (ya no quedan pedidos del día).
+  void Function(String message)? onAutoStop;
+
+  bool get running => _positions != null;
+
+  /// Revisa GPS y permiso. Regresa un mensaje para el dueño si algo falta.
+  static Future<String?> checkPermission() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      await Geolocator.openLocationSettings();
+      return 'Prende la ubicación (GPS) del celular y vuelve a intentar.';
+    }
+    var p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+    if (p == LocationPermission.deniedForever) {
+      await Geolocator.openAppSettings();
+      return 'Da permiso de ubicación a Panaderoso en Ajustes y vuelve a intentar.';
+    }
+    if (p == LocationPermission.denied || p == LocationPermission.unableToDetermine) {
+      return 'Sin permiso de ubicación no se puede compartir el reparto.';
+    }
+    return null;
+  }
+
+  /// Pedidos de hoy que faltan por entregar.
+  static Future<List<BakeryOrder>> pendingToday() async {
+    final today = dateKey(DateTime.now());
+    final orders = await Repo.instance.ordersFrom(today).first;
+    return _pendingOn(orders, today);
+  }
+
+  static List<BakeryOrder> _pendingOn(List<BakeryOrder> orders, String date) =>
+      orders.where((o) => o.deliveryDate == date && o.isPending).toList();
+
+  static List<String> _viewersOf(List<BakeryOrder> orders) =>
+      orders.map((o) => o.customerId).toSet().toList()..sort();
+
+  /// Empieza a compartir. Los pedidos confirmados de hoy pasan a "En camino"
+  /// (eso ya le manda aviso a cada cliente).
+  /// Con [resume] solo reanuda un reparto que quedó abierto, sin cambiar pedidos.
+  Future<void> start({required int alertMeters, bool resume = false}) async {
+    if (running) return;
+    final today = dateKey(DateTime.now());
+    final pending = await pendingToday();
+    _viewers = _viewersOf(pending);
+
+    if (!resume) {
+      await Repo.instance.startTracking(date: today, viewers: _viewers, alertMeters: alertMeters);
+      for (final o in pending.where((o) => o.status == OrderStatus.confirmado)) {
+        await Repo.instance.updateOrder(o.id, {'status': OrderStatus.enCamino.name});
+      }
+    }
+
+    _lastWrite = DateTime(2000);
+    _positions = Geolocator.getPositionStream(
+      locationSettings: AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 30,
+        intervalDuration: const Duration(seconds: 5),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'Repartiendo pan',
+          notificationText: 'Tus clientes ven en el mapa por dónde vas.',
+          notificationChannelName: 'Reparto en vivo',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      ),
+    ).listen(_onPosition, onError: (_) {});
+
+    // Si se entregan o cancelan pedidos, se actualiza quién puede ver el mapa.
+    _orders = Repo.instance.ordersFrom(today).listen((orders) {
+      final viewers = _viewersOf(_pendingOn(orders, today));
+      if (viewers.isEmpty) {
+        stop().then((_) => onAutoStop?.call(
+            'Entregaste todo lo de hoy. Dejamos de compartir tu ubicación.'));
+        return;
+      }
+      if (!listEquals(viewers, _viewers)) {
+        _viewers = viewers;
+        Repo.instance.updateTrackingViewers(viewers).catchError((_) {});
+      }
+    });
+    notifyListeners();
+
+    // Primera ubicación de inmediato, sin esperar a que el carro avance.
+    try {
+      final first = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 15),
+        ),
+      );
+      _onPosition(first);
+    } catch (_) {}
+  }
+
+  void _onPosition(Position p) {
+    final now = DateTime.now();
+    if (now.difference(_lastWrite) < _minWriteGap) return;
+    _lastWrite = now;
+    Repo.instance.updateTrackingPosition(p.latitude, p.longitude).catchError((_) {});
+  }
+
+  Future<void> stop() async {
+    await _positions?.cancel();
+    await _orders?.cancel();
+    _positions = null;
+    _orders = null;
+    notifyListeners();
+    await Repo.instance.stopTracking();
+  }
+}

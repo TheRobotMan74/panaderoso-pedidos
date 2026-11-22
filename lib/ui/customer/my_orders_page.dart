@@ -5,10 +5,16 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../status_chip.dart';
+import 'tracking_page.dart';
 
 class MyOrdersPage extends StatelessWidget {
   final String uid;
-  const MyOrdersPage({super.key, required this.uid});
+
+  /// Casa del cliente (para el mapa de pedidos hechos antes de que hubiera mapa).
+  final double? homeLat;
+  final double? homeLng;
+
+  const MyOrdersPage({super.key, required this.uid, this.homeLat, this.homeLng});
 
   @override
   Widget build(BuildContext context) {
@@ -54,6 +60,24 @@ class MyOrdersPage extends StatelessWidget {
                       '${o.paymentVerified ? ' (pago verificado)' : ''}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
+                    // El día de la entrega se puede ver por dónde va el repartidor.
+                    if (o.isPending &&
+                        (o.status == OrderStatus.enCamino ||
+                            o.deliveryDate == dateKey(DateTime.now())))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: FilledButton.tonalIcon(
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  TrackingPage(order: o, homeLat: homeLat, homeLng: homeLng),
+                            ),
+                          ),
+                          icon: const Icon(Icons.map),
+                          label: const Text('Ver dónde va mi pedido'),
+                        ),
+                      ),
                   ],
                 ),
               ),

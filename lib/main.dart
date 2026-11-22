@@ -57,7 +57,9 @@ class AuthGate extends StatelessWidget {
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) return const _Loading();
             final user = snap.data;
-            if (user == null || user.name.isEmpty || user.address.isEmpty) {
+            // Los clientes deben marcar su casa en el mapa (las cuentas viejas también, una vez).
+            final needsPin = user != null && user.role == Role.cliente && !user.hasLocation;
+            if (user == null || user.name.isEmpty || user.address.isEmpty || needsPin) {
               return ProfilePage(uid: fbUser.uid, existing: user);
             }
             return _RoleHome(user: user);

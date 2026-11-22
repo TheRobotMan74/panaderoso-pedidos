@@ -38,6 +38,13 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    // Ubicación en vivo del repartidor. Solo la ven los clientes con pedido ese día.
+    match /tracking/{doc} {
+      allow read: if isOwner()
+        || (signedIn() && request.auth.uid in resource.data.get('viewers', []));
+      allow write: if isOwner();
+    }
+
     match /orders/{id} {
       allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isOwner());
 

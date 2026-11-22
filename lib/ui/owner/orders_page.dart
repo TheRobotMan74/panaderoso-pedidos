@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../logic/schedule.dart';
 import '../../models.dart';
@@ -86,6 +87,18 @@ class _OrderCard extends StatelessWidget {
     );
   }
 
+  /// Abre Google Maps con la ruta a la casa del cliente.
+  Future<void> _directions() async {
+    final o = order;
+    final dest = o.hasLocation
+        ? '${o.lat},${o.lng}'
+        : Uri.encodeComponent('${o.address}, México');
+    await launchUrl(
+      Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dest&travelmode=driving'),
+      mode: LaunchMode.externalApplication,
+    );
+  }
+
   Future<void> _cancel(BuildContext context) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -148,6 +161,12 @@ class _OrderCard extends StatelessWidget {
                   FilledButton(
                     onPressed: () => Repo.instance.updateOrder(o.id, {'status': next.$1.name}),
                     child: Text(next.$2),
+                  ),
+                if (o.status != OrderStatus.entregado)
+                  OutlinedButton.icon(
+                    onPressed: _directions,
+                    icon: const Icon(Icons.directions, size: 18),
+                    label: const Text('Cómo llegar'),
                   ),
                 if (!isCash && o.paymentProofPath != null)
                   OutlinedButton(onPressed: () => _showProof(context), child: const Text('Ver captura')),

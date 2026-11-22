@@ -49,13 +49,26 @@ Sin ellos, la APK se firma con una llave de pruebas que cambia en cada armado.
 
 | Colección | Qué guarda | Quién escribe |
 | --- | --- | --- |
-| `users/{uid}` | nombre, teléfono, dirección, `role`, tokens de avisos | cada usuario (el `role` solo desde la consola) |
+| `users/{uid}` | nombre, teléfono, dirección, `lat`/`lng` de la casa, `role`, tokens de avisos | cada usuario (el `role` solo desde la consola) |
 | `products/{id}` | nombre, precio, foto, disponible | dueño |
 | `deliveryDays/{AAAA-MM-DD}` | abierto, horarios, hora límite para pedir | dueño |
-| `orders/{id}` | productos, día, horario, pago, captura, estado | cliente crea; dueño actualiza |
-| `config/app` | datos bancarios y reglas de envío | dueño |
+| `orders/{id}` | productos, día, horario, pago, captura, estado, `lat`/`lng`, `nearNotified` | cliente crea; dueño actualiza |
+| `config/app` | datos bancarios, reglas de envío, `nearAlertMeters` | dueño |
+| `tracking/current` | reparto en vivo: ubicación del repartidor, día, `viewers` (clientes con pedido ese día) | dueño; solo lo leen los `viewers` |
 
 Las reglas de seguridad están en `firestore.rules` y `storage.rules`.
+
+## Mapa y reparto en vivo
+
+- El cliente marca su casa en Google Maps al registrarse (las cuentas viejas lo hacen una vez al abrir la app).
+  La búsqueda y la dirección escrita usan el buscador de Android (gratis).
+- **Empezar a repartir** (pestaña Pedidos del dueño) comparte la ubicación con un servicio en primer
+  plano (notificación fija; solo permiso "mientras se usa la app"). Escribe cada ~30 m y como mucho
+  cada 10 s. Se apaga solo al entregar el último pedido del día.
+- La función `avisoRepartidorCerca` avisa a cada cliente una vez cuando el repartidor está a
+  `nearAlertMeters` (1000 m por omisión) de su casa.
+- La llave de Google Maps va en `android/gradle.properties` como `MAPS_API_KEY`, restringida a
+  `mx.panaderoso.pedidos` + la huella SHA-1 de la llave de firma y solo a "Maps SDK for Android".
 
 ## Costo de envío
 
