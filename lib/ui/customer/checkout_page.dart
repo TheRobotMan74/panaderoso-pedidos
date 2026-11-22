@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/cart.dart';
@@ -9,6 +10,10 @@ import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
+import '../order_placed.dart';
+import '../product_image.dart';
+import '../theme.dart';
+import '../widgets.dart';
 
 /// Confirmar pedido: día, horario, forma de pago y captura de transferencia.
 class CheckoutPage extends StatefulWidget {
@@ -64,11 +69,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
         lat: u.lat,
         lng: u.lng,
       ));
+      if (!mounted) {
+        widget.cart.clear();
+        return;
+      }
+      // Primero el festejo (con el pedido todavía a la vista) y luego se vacía el carrito.
+      await showOrderPlaced(context);
       widget.cart.clear();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Pedido enviado! Te avisamos cuando lo confirmemos.')),
-      );
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -89,7 +97,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           stream: Repo.instance.config(),
           builder: (context, cfgSnap) {
             if (!daysSnap.hasData || !cfgSnap.hasData) {
-              return const Center(child: CircularProgressIndicator());
+              return const SkeletonList(count: 3);
             }
             final days = orderableDays(daysSnap.data!, DateTime.now());
             final selected = days.where((d) => d.date == _date).firstOrNull;
@@ -105,157 +113,422 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final cart = widget.cart;
     final needsProof = _payment == PaymentMethod.transferencia && _proof == null;
     final canPlace = !_busy && day != null && _slot != null && !needsProof && !cart.isEmpty;
+    final d = Motion.of(context, Motion.medio);
+
+    String? hint;
+    if (day == null) {
+      hint = 'Elige el día de entrega.';
+    } else if (_slot == null) {
+      hint = 'Elige un horario.';
+    } else if (needsProof) {
+      hint = 'Sube la captura de tu transferencia para continuar.';
+    }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
       children: [
         // ----- Productos -----
-        for (final i in cart.items)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('${i.qty} × ${i.name}'),
-            trailing: Text(money(i.total)),
+        FadeSlideIn(
+          child: PanCard(
+            child: Column(
+              children: [
+                for (final i in cart.items)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 5),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: Pan.mielClara,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(productArt(i.name).$1, style: const TextStyle(fontSize: 20)),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text('${i.qty} × ${i.name}', style: theme.textTheme.titleSmall),
+                        ),
+                        Text(money(i.total), style: theme.textTheme.bodyMedium),
+                      ],
+                    ),
+                  ),
+                const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: _DashedLine()),
+                Row(
+                  children: [
+                    Text('Envío', style: theme.textTheme.bodyMedium),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Pan.salviaClara,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Text('Gratis',
+                          style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF3F6B33))),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Text('Total', style: theme.textTheme.titleLarge),
+                    const Spacer(),
+                    Text(money(cart.subtotal),
+                        style: theme.textTheme.headlineSmall!.copyWith(color: Pan.caramelo)),
+                  ],
+                ),
+              ],
+            ),
           ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Envío'),
-          trailing: const Text('Gratis'),
         ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          title: Text('Total', style: theme.textTheme.titleMedium),
-          trailing: Text(money(cart.subtotal), style: theme.textTheme.titleMedium),
-        ),
-        const Divider(),
 
         // ----- Día y horario -----
-        Text('¿Qué día te lo llevamos?', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SectionTitle('¿Qué día te lo llevamos?'),
         if (days.isEmpty)
-          const Text('Por ahora no hay días de entrega abiertos. Vuelve pronto.')
+          const PanCard(
+            child: Row(
+              children: [
+                Text('🗓️', style: TextStyle(fontSize: 28)),
+                SizedBox(width: 12),
+                Expanded(child: Text('Por ahora no hay días de entrega abiertos. Vuelve pronto.')),
+              ],
+            ),
+          )
         else
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final d in days)
-                ChoiceChip(
-                  label: Text(dayLabel(d.date)),
-                  selected: d.date == _date,
-                  onSelected: (_) => setState(() {
-                    _date = d.date;
+          SizedBox(
+            height: 104,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              itemCount: days.length,
+              separatorBuilder: (_, _) => const SizedBox(width: 10),
+              itemBuilder: (context, i) => FadeSlideIn(
+                index: i + 1,
+                child: _DayCard(
+                  day: days[i],
+                  selected: days[i].date == _date,
+                  onTap: () => setState(() {
+                    _date = days[i].date;
                     _slot = null;
                   }),
                 ),
-            ],
+              ),
+            ),
           ),
-        if (day != null) ...[
-          const SizedBox(height: 12),
-          Text('Horario', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final s in day.slots)
-                ChoiceChip(
-                  label: Text(slotLabel(s, minutes: day.slotMinutes)),
-                  selected: s == _slot,
-                  onSelected: (_) => setState(() => _slot = s),
+        AnimatedSize(
+          duration: d,
+          curve: Motion.curva,
+          alignment: Alignment.topCenter,
+          child: day == null
+              ? const SizedBox(width: double.infinity)
+              : Column(
+                  key: ValueKey(day.date),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SectionTitle('Horario'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final (i, s) in day.slots.indexed)
+                          FadeSlideIn(
+                            index: i,
+                            offset: 10,
+                            child: _Pill(
+                              icon: Icons.schedule_rounded,
+                              label: slotLabel(s, minutes: day.slotMinutes),
+                              selected: s == _slot,
+                              onTap: () => setState(() => _slot = s),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
-            ],
-          ),
-        ],
-        const Divider(height: 32),
+        ),
 
         // ----- Pago -----
-        Text('¿Cómo vas a pagar?', style: theme.textTheme.titleMedium),
-        RadioGroup<PaymentMethod>(
-          groupValue: _payment,
-          onChanged: (v) => setState(() => _payment = v!),
-          child: const Column(
-            children: [
-              RadioListTile(
-                contentPadding: EdgeInsets.zero,
-                value: PaymentMethod.transferencia,
-                title: Text('Transferencia'),
+        const SectionTitle('¿Cómo vas a pagar?'),
+        Row(
+          children: [
+            Expanded(
+              child: _PayOption(
+                emoji: '🏦',
+                label: 'Transferencia',
+                selected: _payment == PaymentMethod.transferencia,
+                onTap: () => setState(() => _payment = PaymentMethod.transferencia),
               ),
-              RadioListTile(
-                contentPadding: EdgeInsets.zero,
-                value: PaymentMethod.efectivo,
-                title: Text('Efectivo al recibir'),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _PayOption(
+                emoji: '💵',
+                label: 'Efectivo al recibir',
+                selected: _payment == PaymentMethod.efectivo,
+                onTap: () => setState(() => _payment = PaymentMethod.efectivo),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        if (_payment == PaymentMethod.transferencia) _transferBox(cfg),
-        const SizedBox(height: 12),
+        AnimatedSize(
+          duration: d,
+          curve: Motion.curva,
+          alignment: Alignment.topCenter,
+          child: _payment == PaymentMethod.transferencia
+              ? Padding(padding: const EdgeInsets.only(top: 10), child: _transferBox(cfg))
+              : const SizedBox(width: double.infinity),
+        ),
+        const SizedBox(height: 16),
         TextField(
           controller: _notes,
           decoration: const InputDecoration(
             labelText: 'Notas para la entrega (opcional)',
-            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.edit_note_rounded),
           ),
         ),
-        const SizedBox(height: 20),
-        FilledButton(
+        const SizedBox(height: 22),
+        HoneyButton(
+          icon: Icons.shopping_bag_rounded,
+          label: _busy ? 'Enviando…' : 'Hacer pedido · ${money(cart.subtotal)}',
+          busy: _busy,
           onPressed: canPlace ? () => _place(day) : null,
-          child: Text(_busy ? 'Enviando…' : 'Hacer pedido'),
         ),
-        if (needsProof && day != null && _slot != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text('Sube la captura de tu transferencia para continuar.',
-                textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
-          ),
+        AnimatedSwitcher(
+          duration: Motion.of(context, Motion.rapido),
+          child: hint == null || days.isEmpty
+              ? const SizedBox(height: 8)
+              : Padding(
+                  key: ValueKey(hint),
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Text(hint, textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+                ),
+        ),
       ],
     );
   }
 
   Widget _transferBox(AppConfig cfg) {
     final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (cfg.clabe.isEmpty)
-              const Text('Pide los datos de la cuenta por WhatsApp.')
-            else ...[
-              Text('Transfiere ${money(widget.cart.subtotal)} a:', style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 4),
-              Text(cfg.accountHolder, style: theme.textTheme.titleSmall),
-              Text(cfg.bankName),
-              Row(
+    return PanCard(
+      margin: EdgeInsets.zero,
+      color: const Color(0xFFFFF7E4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (cfg.clabe.isEmpty)
+            const Text('Pide los datos de la cuenta por WhatsApp.')
+          else ...[
+            Text('Transfiere ${money(widget.cart.subtotal)} a:', style: theme.textTheme.bodySmall),
+            const SizedBox(height: 4),
+            Text(cfg.accountHolder, style: theme.textTheme.titleMedium),
+            Text(cfg.bankName, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+              decoration: BoxDecoration(
+                color: Pan.papel,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFF0E0C2)),
+              ),
+              child: Row(
                 children: [
-                  Expanded(child: SelectableText('CLABE ${cfg.clabe}')),
+                  Expanded(
+                    child: SelectableText('CLABE ${cfg.clabe}',
+                        style: const TextStyle(fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+                  ),
                   IconButton(
                     tooltip: 'Copiar CLABE',
-                    icon: const Icon(Icons.copy),
+                    icon: const Icon(Icons.copy_rounded, color: Pan.caramelo),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: cfg.clabe));
+                      HapticFeedback.lightImpact();
                       ScaffoldMessenger.of(context)
-                          .showSnackBar(const SnackBar(content: Text('CLABE copiada')));
+                          .showSnackBar(const SnackBar(content: Text('CLABE copiada ✓')));
                     },
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 8),
-            if (_proof != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(_proof!, height: 160, fit: BoxFit.cover),
-              ),
-            OutlinedButton.icon(
+            ),
+          ],
+          const SizedBox(height: 12),
+          AnimatedSwitcher(
+            duration: Motion.of(context, Motion.medio),
+            child: _proof == null
+                ? const SizedBox.shrink()
+                : Padding(
+                    key: ValueKey(_proof!.path),
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.file(_proof!,
+                          height: 160, width: double.infinity, fit: BoxFit.cover, cacheHeight: 480),
+                    ),
+                  ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
               onPressed: _pickProof,
-              icon: const Icon(Icons.upload),
+              icon: Icon(_proof == null ? Icons.upload_rounded : Icons.check_circle_rounded),
               label: Text(_proof == null ? 'Subir captura' : 'Cambiar captura'),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Tarjetita de día: "LUN / 23 / nov". Se pinta de miel al elegirla.
+class _DayCard extends StatelessWidget {
+  final DeliveryDay day;
+  final bool selected;
+  final VoidCallback onTap;
+  const _DayCard({required this.day, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final date = parseDateKey(day.date);
+    return Pressable(
+      onTap: onTap,
+      haptic: true,
+      child: AnimatedContainer(
+        duration: Motion.of(context, Motion.medio),
+        curve: Motion.curva,
+        width: 78,
+        decoration: BoxDecoration(
+          gradient: selected ? Pan.gradienteMiel : null,
+          color: selected ? null : Pan.papel,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: selected ? Colors.transparent : const Color(0xFFEADCC4)),
+          boxShadow: selected
+              ? const [BoxShadow(color: Color(0x55E8960F), blurRadius: 14, offset: Offset(0, 6))]
+              : Pan.sombra,
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(DateFormat('EEE', 'es_MX').format(date).replaceAll('.', '').toUpperCase(),
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                    color: selected ? Pan.tostado : Pan.canela)),
+            Text('${date.day}',
+                style: TextStyle(
+                    fontFamily: 'Fraunces', fontSize: 30, fontWeight: FontWeight.w700, color: Pan.cacao, height: 1.15)),
+            Text(DateFormat('MMM', 'es_MX').format(date).replaceAll('.', ''),
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? Pan.tostado : Pan.canela)),
           ],
         ),
       ),
     );
   }
+}
+
+class _Pill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _Pill({required this.icon, required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Pressable(
+        onTap: onTap,
+        haptic: true,
+        child: AnimatedContainer(
+          duration: Motion.of(context, Motion.medio),
+          curve: Motion.curva,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? Pan.cacao : Pan.papel,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: selected ? Pan.cacao : const Color(0xFFEADCC4)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: selected ? Pan.miel : Pan.canela),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w800, color: selected ? Pan.crema : Pan.cacao)),
+            ],
+          ),
+        ),
+      );
+}
+
+class _PayOption extends StatelessWidget {
+  final String emoji;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _PayOption({required this.emoji, required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Pressable(
+        onTap: onTap,
+        haptic: true,
+        child: AnimatedContainer(
+          duration: Motion.of(context, Motion.medio),
+          curve: Motion.curva,
+          height: 92,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF4D6) : Pan.papel,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: selected ? Pan.miel : const Color(0xFFEADCC4), width: selected ? 2 : 1),
+            boxShadow: Pan.sombra,
+          ),
+          child: Stack(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(emoji, style: const TextStyle(fontSize: 26, height: 1)),
+                  Text(label, style: const TextStyle(fontWeight: FontWeight.w800, height: 1.15)),
+                ],
+              ),
+              Positioned(
+                top: 0,
+                right: 0,
+                child: AnimatedScale(
+                  scale: selected ? 1 : 0,
+                  duration: Motion.of(context, Motion.medio),
+                  curve: Motion.rebote,
+                  child: const Icon(Icons.check_circle_rounded, color: Pan.caramelo, size: 22),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
+class _DashedLine extends StatelessWidget {
+  const _DashedLine();
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, c) => Row(
+          children: [
+            for (var i = 0; i < c.maxWidth ~/ 9; i++)
+              Container(
+                width: 5,
+                height: 1.5,
+                margin: const EdgeInsets.only(right: 4),
+                color: const Color(0xFFE2CFAF),
+              ),
+          ],
+        ),
+      );
 }

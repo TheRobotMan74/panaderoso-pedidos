@@ -4,6 +4,8 @@ import '../../logic/geo.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../../services/tracker.dart';
+import '../theme.dart';
+import '../widgets.dart';
 
 /// Arriba de los pedidos: "Empezar a repartir" / "Terminar reparto".
 class DeliveryBanner extends StatefulWidget {
@@ -83,55 +85,109 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return ListenableBuilder(
       listenable: _tracker,
       builder: (context, _) => StreamBuilder<TrackingInfo>(
         stream: Repo.instance.tracking(),
         builder: (context, snap) {
           final info = snap.data ?? const TrackingInfo();
+          final Widget child;
           if (_tracker.running) {
-            return _box(
-              color: theme.colorScheme.primaryContainer,
-              icon: Icons.delivery_dining,
+            child = _box(
+              key: const ValueKey('repartiendo'),
+              gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
+              leading: const PulseDot(color: Colors.white, size: 12),
               title: 'Repartiendo',
               subtitle: '${info.viewers.length} clientes ven por dónde vas'
                   '${info.updatedAt != null ? ' · ubicación ${agoLabel(info.updatedAt, DateTime.now())}' : ''}',
-              action: OutlinedButton(
+              light: true,
+              action: _GhostButton(
+                label: 'Terminar',
                 onPressed: _busy ? null : _stop,
-                child: const Text('Terminar reparto'),
               ),
             );
-          }
-          if (info.active) {
+          } else if (info.active) {
             // La app se cerró a media ruta: el reparto quedó abierto.
-            return _box(
-              color: theme.colorScheme.tertiaryContainer,
-              icon: Icons.pause_circle,
+            child = _box(
+              key: const ValueKey('abierto'),
+              color: const Color(0xFFFFF1CF),
+              leading: const Icon(Icons.pause_circle_rounded, size: 34, color: Pan.caramelo),
               title: 'El reparto quedó abierto',
               subtitle: 'Tus clientes no ven tu ubicación ahorita.',
-              action: Wrap(
-                spacing: 8,
+              action: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   FilledButton(
                     onPressed: _busy ? null : () => _start(resume: true),
                     child: const Text('Seguir'),
                   ),
-                  OutlinedButton(onPressed: _busy ? null : _stop, child: const Text('Terminar')),
+                  TextButton(onPressed: _busy ? null : _stop, child: const Text('Terminar')),
                 ],
               ),
             );
-          }
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-            child: FilledButton.icon(
-              onPressed: _busy ? null : _start,
-              icon: const Icon(Icons.delivery_dining),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('Empezar a repartir'),
+          } else {
+            child = Padding(
+              key: const ValueKey('empezar'),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Pressable(
+                onTap: _busy ? null : _start,
+                haptic: true,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+                  decoration: BoxDecoration(
+                    gradient: Pan.gradienteCaramelo,
+                    borderRadius: BorderRadius.circular(Pan.radio),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x40A85F06), blurRadius: 16, offset: Offset(0, 8)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _busy
+                            ? const Padding(
+                                padding: EdgeInsets.all(13),
+                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                              )
+                            : const Icon(Icons.delivery_dining_rounded, color: Colors.white, size: 28),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Empezar a repartir',
+                                style: TextStyle(
+                                    fontFamily: 'Fraunces',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 19,
+                                    color: Colors.white)),
+                            Text('Tus clientes verán por dónde vas',
+                                style: TextStyle(color: Color(0xFFFBE3BE), fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                    ],
+                  ),
+                ),
               ),
+            );
+          }
+          return AnimatedSwitcher(
+            duration: Motion.of(context, Motion.medio),
+            transitionBuilder: (c, a) => FadeTransition(
+              opacity: a,
+              child: SizeTransition(sizeFactor: a, alignment: Alignment.topCenter, child: c),
             ),
+            child: child,
           );
         },
       ),
@@ -139,35 +195,61 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
   }
 
   Widget _box({
-    required Color color,
-    required IconData icon,
+    required Key key,
+    Color? color,
+    Gradient? gradient,
+    required Widget leading,
     required String title,
     required String subtitle,
     required Widget action,
+    bool light = false,
   }) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      color: color,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+    final fg = light ? Colors.white : Pan.cacao;
+    return Padding(
+      key: key,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: PanCard(
+        margin: EdgeInsets.zero,
+        color: color,
+        gradient: gradient,
+        padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
         child: Row(
           children: [
-            Icon(icon, size: 32),
-            const SizedBox(width: 12),
+            SizedBox(width: 40, child: Center(child: leading)),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: theme.textTheme.titleMedium),
-                  Text(subtitle, style: theme.textTheme.bodySmall),
+                  Text(title, style: theme.textTheme.titleLarge!.copyWith(color: fg, fontSize: 19)),
+                  Text(subtitle,
+                      style: theme.textTheme.bodySmall!
+                          .copyWith(color: light ? const Color(0xFFE5F0DD) : Pan.canela)),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             action,
           ],
         ),
       ),
     );
   }
+}
+
+class _GhostButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  const _GhostButton({required this.label, this.onPressed});
+
+  @override
+  Widget build(BuildContext context) => OutlinedButton(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: const BorderSide(color: Color(0xAAFFFFFF), width: 1.4),
+        ),
+        child: Text(label),
+      );
 }

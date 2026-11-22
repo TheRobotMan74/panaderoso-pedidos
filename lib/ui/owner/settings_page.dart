@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../logic/shipping.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../widgets.dart';
 
 /// Datos para transferencias y reglas de envío.
 class SettingsPage extends StatelessWidget {
@@ -13,7 +14,7 @@ class SettingsPage extends StatelessWidget {
     return StreamBuilder<AppConfig>(
       stream: Repo.instance.config(),
       builder: (context, snap) {
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        if (!snap.hasData) return const SkeletonList(count: 3);
         return _SettingsForm(initial: snap.data!);
       },
     );
@@ -62,27 +63,26 @@ class _SettingsFormState extends State<_SettingsForm> {
     final theme = Theme.of(context);
     final free = widget.initial.shipping.freeFromPieces();
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       children: [
-        Text('Datos para transferencia', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SectionTitle('Datos para transferencia', padding: EdgeInsets.fromLTRB(4, 4, 4, 10)),
         TextField(
           controller: _holder,
-          decoration: const InputDecoration(labelText: 'A nombre de', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'A nombre de'),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _bank,
-          decoration: const InputDecoration(labelText: 'Banco', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'Banco'),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _clabe,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'CLABE', border: OutlineInputBorder()),
+          decoration: const InputDecoration(labelText: 'CLABE'),
         ),
         const Divider(height: 40),
-        Text('Envío', style: theme.textTheme.titleMedium),
+        const SectionTitle('Envío', padding: EdgeInsets.fromLTRB(4, 4, 4, 4)),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Cobrar envío'),
@@ -97,7 +97,6 @@ class _SettingsFormState extends State<_SettingsForm> {
             labelText: 'Precio por km',
             prefixText: r'$ ',
             helperText: r'Gasolina: $25 por litro ÷ 9 km por litro ≈ $2.80',
-            border: OutlineInputBorder(),
           ),
         ),
         if (free != null)
@@ -113,8 +112,7 @@ class _SettingsFormState extends State<_SettingsForm> {
           ),
         ),
         const Divider(height: 40),
-        Text('Reparto', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
+        const SectionTitle('Reparto', padding: EdgeInsets.fromLTRB(4, 4, 4, 10)),
         TextField(
           controller: _nearMeters,
           keyboardType: TextInputType.number,
@@ -122,11 +120,10 @@ class _SettingsFormState extends State<_SettingsForm> {
             labelText: 'Avisar al cliente cuando estés a',
             suffixText: 'metros',
             helperText: '1000 m son como 2 o 3 minutos en carro',
-            border: OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 24),
-        FilledButton(onPressed: _save, child: const Text('Guardar')),
+        HoneyButton(label: 'Guardar', icon: Icons.check_rounded, onPressed: _save),
       ],
     );
   }

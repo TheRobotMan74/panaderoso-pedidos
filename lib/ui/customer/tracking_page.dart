@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../logic/geo.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../theme.dart';
+import '../widgets.dart';
 
 /// El cliente ve en el mapa por dónde va su pedido.
 class TrackingPage extends StatefulWidget {
@@ -153,27 +155,61 @@ class _TrackingPageState extends State<TrackingPage> {
             },
           ),
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Material(
-              elevation: 8,
-              color: theme.colorScheme.surface,
-              child: SafeArea(
-                top: false,
-                child: ListTile(
-                  contentPadding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                  leading: const Icon(Icons.delivery_dining, size: 36),
-                  title: Text(title, style: theme.textTheme.titleMedium),
-                  subtitle: subtitle.isEmpty ? null : Text(subtitle),
-                  trailing: _driverVisible
-                      ? IconButton(
-                          tooltip: 'Centrar',
-                          icon: const Icon(Icons.center_focus_strong),
-                          onPressed: () => _fitIfNeeded(force: true),
-                        )
-                      : null,
-                ),
+            left: 12,
+            right: 12,
+            bottom: 12 + MediaQuery.paddingOf(context).bottom,
+            child: PanCard(
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 54,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      gradient: delivered ? null : Pan.gradienteMiel,
+                      color: delivered ? Pan.salviaClara : null,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      delivered ? Icons.check_rounded : Icons.delivery_dining_rounded,
+                      size: 30,
+                      color: delivered ? Pan.salvia : Pan.cacao,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            if (_driverVisible && !delivered) ...[
+                              const PulseDot(size: 8),
+                              const SizedBox(width: 4),
+                            ],
+                            Expanded(
+                              child: AnimatedCount(title,
+                                  style: theme.textTheme.titleMedium,
+                                  alignment: Alignment.centerLeft),
+                            ),
+                          ],
+                        ),
+                        if (subtitle.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(subtitle, style: theme.textTheme.bodySmall),
+                        ],
+                      ],
+                    ),
+                  ),
+                  if (_driverVisible)
+                    IconButton(
+                      tooltip: 'Centrar',
+                      icon: const Icon(Icons.center_focus_strong_rounded, color: Pan.caramelo),
+                      onPressed: () => _fitIfNeeded(force: true),
+                    ),
+                ],
               ),
             ),
           ),
