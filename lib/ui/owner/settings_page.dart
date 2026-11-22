@@ -5,6 +5,7 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../location_picker_page.dart';
 import '../theme.dart';
+import '../update_watcher.dart';
 import '../widgets.dart';
 
 /// Datos para transferencias y reglas de envío.
@@ -166,6 +167,8 @@ class _SettingsFormState extends State<_SettingsForm> {
         ),
         const SizedBox(height: 24),
         HoneyButton(label: 'Guardar', icon: Icons.check_rounded, onPressed: _save),
+        const SizedBox(height: 28),
+        const VersionLabel(),
       ],
     );
   }

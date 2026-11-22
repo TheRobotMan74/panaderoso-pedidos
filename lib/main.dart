@@ -12,6 +12,7 @@ import 'ui/login_page.dart';
 import 'ui/owner/owner_home.dart';
 import 'ui/profile_page.dart';
 import 'ui/theme.dart';
+import 'ui/update_watcher.dart';
 import 'ui/widgets.dart';
 
 Future<void> main() async {
@@ -109,9 +110,11 @@ class _RoleHomeState extends State<_RoleHome> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.user.role == Role.dueno
-      ? OwnerHome(user: widget.user)
-      : CustomerHome(user: widget.user);
+  Widget build(BuildContext context) => UpdateWatcher(
+        child: widget.user.role == Role.dueno
+            ? OwnerHome(user: widget.user)
+            : CustomerHome(user: widget.user),
+      );
 }
 
 class _Loading extends StatelessWidget {
