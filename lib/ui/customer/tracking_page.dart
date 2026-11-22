@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../logic/geo.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../../web/map_fallback.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -141,6 +142,9 @@ class _TrackingPageState extends State<TrackingPage> {
       appBar: AppBar(title: const Text('¿Dónde va mi pedido?')),
       body: Stack(
         children: [
+          if (!mapsUsable)
+            const MapFallback(message: 'Aquí abajo te decimos qué tan cerca va tu pan.')
+          else
           GoogleMap(
             initialCameraPosition: CameraPosition(
               target: home ?? const LatLng(23.6, -102.5),

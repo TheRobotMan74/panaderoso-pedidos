@@ -36,6 +36,7 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _bank = TextEditingController(text: widget.initial.bankName);
   late final _clabe = TextEditingController(text: widget.initial.clabe);
   late final _holder = TextEditingController(text: widget.initial.accountHolder);
+  late final _whatsapp = TextEditingController(text: widget.initial.whatsapp);
   late final _perKm =
       TextEditingController(text: widget.initial.shipping.pricePerKm.toStringAsFixed(2));
   late bool _shippingEnabled = widget.initial.shipping.enabled;
@@ -73,11 +74,13 @@ class _SettingsFormState extends State<_SettingsForm> {
       bankName: _bank.text.trim(),
       clabe: _clabe.text.replaceAll(' ', ''),
       accountHolder: _holder.text.trim(),
+      whatsapp: _whatsapp.text.replaceAll(RegExp(r'\D'), ''),
       shipping: ShippingRules(
         enabled: _shippingEnabled,
         pricePerKm: double.tryParse(_perKm.text.replaceAll(',', '.')) ?? old.pricePerKm,
         tiers: old.tiers,
         roundTo: old.roundTo,
+        roadFactor: old.roadFactor,
       ),
       nearAlertMeters: (int.tryParse(_nearMeters.text.trim()) ?? widget.initial.nearAlertMeters)
           .clamp(100, 10000),
@@ -110,6 +113,16 @@ class _SettingsFormState extends State<_SettingsForm> {
           controller: _clabe,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(labelText: 'CLABE'),
+        ),
+        const Divider(height: 40),
+        const SectionTitle('WhatsApp', padding: EdgeInsets.fromLTRB(4, 4, 4, 10)),
+        TextField(
+          controller: _whatsapp,
+          keyboardType: TextInputType.phone,
+          decoration: const InputDecoration(
+            labelText: 'WhatsApp de la panadería',
+            helperText: 'Los clientes te pueden escribir desde su pedido. Vacío = sin botón.',
+          ),
         ),
         const Divider(height: 40),
         const SectionTitle('Envío', padding: EdgeInsets.fromLTRB(4, 4, 4, 4)),

@@ -50,6 +50,9 @@ dependencies:
   url_launcher: ^6.3.3
   package_info_plus: ^10.2.2
   shorebird_code_push: ^2.0.7
+  # Versión web (iPhone): buscar direcciones y leer datos del navegador.
+  http: ^1.6.0
+  web: ^1.1.1
 
 dev_dependencies:
   flutter_test:

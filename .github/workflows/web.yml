@@ -1,0 +1,79 @@
+# Versión web de Panaderoso (para iPhone): https://panaderoso.web.app
+# - En pull requests: revisa que la versión web se pueda armar.
+# - En main: la arma y la publica en Firebase Hosting. Los iPhone la ven nueva la
+#   siguiente vez que abren la app (no hay que reinstalar nada).
+# La publicación entra a Google sin contraseñas guardadas: GitHub demuestra que es este
+# repositorio (Workload Identity) y Google lo deja publicar solo la página.
+# Eso se prepara una sola vez con scripts/preparar-web.sh (ver README).
+name: Web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'hosting/**'
+      - '.github/workflows/web.yml'
+  pull_request:
+    paths:
+      - 'lib/**'
+      - 'web/**'
+      - 'assets/**'
+      - 'pubspec.yaml'
+      - 'pubspec.lock'
+      - 'hosting/**'
+      - '.github/workflows/web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FLUTTER_VERSION: '3.50.1'
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Armar la versión web
+        run: |
+          flutter build web --release
+          rm -rf hosting/public
+          cp -r build/web hosting/public
+
+      - name: Entrar a Google (sin contraseñas)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/1028279896674/locations/global/workloadIdentityPools/github/providers/github
+          service_account: web-deploy@panaderoso.iam.gserviceaccount.com
+
+      - uses: actions/setup-node@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        with:
+          node-version: '22'
+
+      - name: Publicar en panaderoso.web.app
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        working-directory: hosting
+        run: npx --yes firebase-tools@14 deploy --only hosting --project panaderoso --non-interactive

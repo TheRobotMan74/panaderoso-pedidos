@@ -53,3 +53,5 @@ functions/node_modules/
 
 # Secretos para probar las funciones en la compu (nunca se suben)
 functions/.secret.local
+/hosting/public/
+/hosting/.firebase/

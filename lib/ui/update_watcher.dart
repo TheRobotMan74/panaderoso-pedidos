@@ -23,7 +23,8 @@ class _UpdateWatcherState extends State<UpdateWatcher> {
   @override
   void initState() {
     super.initState();
-    if (_checked || !kReleaseMode) return;
+    // En la web no hay APK ni mejoras: cada vez que se abre ya trae lo más nuevo.
+    if (_checked || !kReleaseMode || kIsWeb) return;
     _checked = true;
     // Primero que cargue la pantalla; la revisión va después, en segundo plano.
     Future.delayed(const Duration(seconds: 3), _check);

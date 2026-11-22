@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -32,8 +30,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
   String? _date;
   String? _slot;
   PaymentMethod _payment = PaymentMethod.transferencia;
-  File? _proof;
+  /// La captura elegida, ya leída (así sirve igual en Android y en la web del iPhone).
+  Uint8List? _proof;
+  int _proofKey = 0;
   bool _busy = false;
+
+  /// Envío calculado con la configuración más reciente (el servidor lo vuelve a calcular).
+  int _fee = 0;
 
   Future<void> _pickProof() async {
     final x = await ImagePicker().pickImage(
@@ -41,7 +44,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       maxWidth: 1600,
       imageQuality: 80,
     );
-    if (x != null) setState(() => _proof = File(x.path));
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _proof = bytes;
+      _proofKey++;
+    });
   }
 
   Future<void> _place(DeliveryDay day) async {
@@ -64,9 +73,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         slot: _slot!,
         paymentMethod: _payment,
         paymentProofPath: proofPath,
-        // Fase 1: envío gratis. El cálculo por distancia (logic/shipping.dart)
-        // se conecta en la fase 2, junto con el mapa.
-        shippingFee: 0,
+        // Por distancia desde el punto de salida (logic/shipping.dart). Solo es para mostrar:
+        // el servidor hace la misma cuenta y guarda la suya.
+        shippingFee: _fee,
         notes: _notes.text.trim(),
         lat: u.lat,
         lng: u.lng,
@@ -143,6 +152,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final canPlace =
         !_busy && day != null && _slot != null && !needsProof && !cart.isEmpty && over.isEmpty;
     final d = Motion.of(context, Motion.medio);
+    final u = widget.user;
+    _fee = cfg.shipping.feeForTrip(
+      baseLat: cfg.baseLat,
+      baseLng: cfg.baseLng,
+      homeLat: u.lat,
+      homeLng: u.lng,
+      pieces: cart.pieces,
+    );
+    final total = cart.subtotal + _fee;
+    final freeFrom = cfg.shipping.enabled ? cfg.shipping.freeFromPieces() : null;
 
     String? hint;
     if (day == null) {
@@ -191,6 +210,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   children: [
                     Text('Envío', style: theme.textTheme.bodyMedium),
                     const Spacer(),
+                    if (_fee > 0)
+                      Text(money(_fee.toDouble()), style: theme.textTheme.bodyMedium)
+                    else
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                       decoration: BoxDecoration(
@@ -202,12 +224,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     ),
                   ],
                 ),
+                if (_fee > 0 && freeFrom != null && cart.pieces < freeFrom)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Con ${freeFrom - cart.pieces} pieza${freeFrom - cart.pieces == 1 ? '' : 's'} más, '
+                        'el envío es gratis 🎉',
+                        style: theme.textTheme.bodySmall?.copyWith(color: Pan.caramelo),
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     Text('Total', style: theme.textTheme.titleLarge),
                     const Spacer(),
-                    Text(money(cart.subtotal),
+                    Text(money(total),
                         style: theme.textTheme.headlineSmall!.copyWith(color: Pan.caramelo)),
                   ],
                 ),
@@ -327,7 +361,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         const SizedBox(height: 22),
         HoneyButton(
           icon: Icons.shopping_bag_rounded,
-          label: _busy ? 'Enviando…' : 'Hacer pedido · ${money(cart.subtotal)}',
+          label: _busy ? 'Enviando…' : 'Hacer pedido · ${money(total)}',
           busy: _busy,
           onPressed: canPlace ? () => _place(day) : null,
         ),
@@ -406,7 +440,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           if (cfg.clabe.isEmpty)
             const Text('Pide los datos de la cuenta por WhatsApp.')
           else ...[
-            Text('Transfiere ${money(widget.cart.subtotal)} a:', style: theme.textTheme.bodySmall),
+            Text('Transfiere ${money(widget.cart.subtotal + _fee)} a:', style: theme.textTheme.bodySmall),
             const SizedBox(height: 4),
             Text(cfg.accountHolder, style: theme.textTheme.titleMedium),
             Text(cfg.bankName, style: theme.textTheme.bodyMedium),
@@ -444,11 +478,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: _proof == null
                 ? const SizedBox.shrink()
                 : Padding(
-                    key: ValueKey(_proof!.path),
+                    key: ValueKey(_proofKey),
                     padding: const EdgeInsets.only(bottom: 10),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: Image.file(_proof!,
+                      child: Image.memory(_proof!,
                           height: 160, width: double.infinity, fit: BoxFit.cover, cacheHeight: 480),
                     ),
                   ),

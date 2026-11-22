@@ -1,3 +1,5 @@
+import 'geo.dart';
+
 /// Cálculo del costo de envío.
 ///
 /// envío = km de ida × precio por km × porcentaje que paga el cliente,
@@ -34,11 +36,16 @@ class ShippingRules {
   /// Redondeo hacia arriba, en pesos.
   final int roundTo;
 
+  /// Las calles no van en línea recta: los km en línea recta se multiplican por esto
+  /// para acercarse a lo que de verdad se maneja (1.3 = 30% más).
+  final double roadFactor;
+
   const ShippingRules({
     this.enabled = false,
     this.pricePerKm = 2.8,
     this.tiers = defaultTiers,
     this.roundTo = 5,
+    this.roadFactor = 1.3,
   });
 
   static const defaultTiers = [
@@ -69,6 +76,24 @@ class ShippingRules {
     return ((raw - 1e-9) / step).ceil() * step;
   }
 
+  /// Km de ida (aproximados por calle) del punto de salida a la casa del cliente.
+  double kmBetween(double fromLat, double fromLng, double toLat, double toLng) =>
+      distanceMeters(fromLat, fromLng, toLat, toLng) / 1000 * roadFactor;
+
+  /// Envío de un pedido de [pieces] piezas desde el punto de salida a la casa.
+  /// 0 si está apagado o falta el punto de salida o la casa en el mapa.
+  /// El servidor (función hacerPedido) hace exactamente la misma cuenta.
+  int feeForTrip({
+    required double? baseLat,
+    required double? baseLng,
+    required double? homeLat,
+    required double? homeLng,
+    required int pieces,
+  }) {
+    if (baseLat == null || baseLng == null || homeLat == null || homeLng == null) return 0;
+    return feeFor(km: kmBetween(baseLat, baseLng, homeLat, homeLng), pieces: pieces);
+  }
+
   /// Piezas desde las que el envío es gratis, o null si nunca lo es.
   int? freeFromPieces() {
     final free = tiers.where((t) => t.customerShare == 0).toList()
@@ -81,6 +106,7 @@ class ShippingRules {
         'pricePerKm': pricePerKm,
         'tiers': tiers.map((t) => t.toMap()).toList(),
         'roundTo': roundTo,
+        'roadFactor': roadFactor,
       };
 
   factory ShippingRules.fromMap(Map<String, dynamic>? m) {
@@ -93,6 +119,7 @@ class ShippingRules {
       pricePerKm: (m['pricePerKm'] as num?)?.toDouble() ?? 2.8,
       tiers: (tiers == null || tiers.isEmpty) ? defaultTiers : tiers,
       roundTo: (m['roundTo'] as num?)?.toInt() ?? 5,
+      roadFactor: (m['roadFactor'] as num?)?.toDouble() ?? 1.3,
     );
   }
 }

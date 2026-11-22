@@ -254,4 +254,31 @@ void main() {
       expect(ids(r), anyOf([equals(['a', 'b', 'c']), equals(['c', 'b', 'a'])]));
     });
   });
+
+  group('envío por distancia (igual que el servidor)', () {
+    const r = ShippingRules(enabled: true);
+    int fee(double lat, double lng, int p) =>
+        r.feeForTrip(baseLat: 19.70, baseLng: -101.19, homeLat: lat, homeLng: lng, pieces: p);
+    test('mismos resultados que costoEnvio de functions/index.js', () {
+      expect(fee(19.75, -101.15, 1), 30);
+      expect(fee(19.75, -101.15, 3), 10);
+      expect(fee(19.75, -101.15, 6), 0);
+      expect(fee(19.70, -101.19, 1), 0);
+      expect(fee(19.8, -101.3, 1), 60);
+    });
+    test('sin punto de salida o sin casa: gratis', () {
+      expect(r.feeForTrip(baseLat: null, baseLng: null, homeLat: 19.75, homeLng: -101.15, pieces: 1), 0);
+      expect(r.feeForTrip(baseLat: 19.7, baseLng: -101.19, homeLat: null, homeLng: null, pieces: 1), 0);
+    });
+    test('apagado: gratis', () {
+      expect(
+          const ShippingRules().feeForTrip(
+              baseLat: 19.70, baseLng: -101.19, homeLat: 19.75, homeLng: -101.15, pieces: 1),
+          0);
+    });
+    test('roadFactor se guarda y se lee', () {
+      expect(ShippingRules.fromMap(const ShippingRules(roadFactor: 1.5).toMap()).roadFactor, 1.5);
+      expect(ShippingRules.fromMap({'enabled': true}).roadFactor, 1.3);
+    });
+  });
 }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -152,9 +153,10 @@ class Repo {
   // ---------- Pedidos ----------
 
   /// Sube la captura de la transferencia y regresa su ruta en Storage.
-  Future<String> uploadPaymentProof(String uid, File file) async {
+  /// Sube la captura de la transferencia (ya leída) y regresa dónde quedó.
+  Future<String> uploadPaymentProof(String uid, Uint8List bytes) async {
     final path = 'payment-proofs/$uid/${DateTime.now().millisecondsSinceEpoch}.jpg';
-    await _storage.ref(path).putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+    await _storage.ref(path).putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
     return path;
   }
 

@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/cart.dart';
@@ -6,6 +7,7 @@ import '../../logic/schedule.dart';
 import '../../logic/stock.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../../web/web_app_banner.dart';
 import '../format.dart';
 import '../product_image.dart';
 import '../profile_page.dart';
@@ -55,6 +57,12 @@ class _CustomerHomeState extends State<CustomerHome> {
     }
   }
 
+  /// En la versión web (iPhone) arriba va el aviso para instalarla o activar avisos.
+  /// En Android la pantalla queda igual que siempre.
+  Widget _withWebBanner(Widget body) => kIsWeb
+      ? Column(children: [WebAppBanner(user: widget.user), Expanded(child: body)])
+      : body;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -94,7 +102,7 @@ class _CustomerHomeState extends State<CustomerHome> {
           ),
         ],
       ),
-      body: Stack(
+      body: _withWebBanner(Stack(
         children: [
           Positioned.fill(
             child: FadeThroughSwitcher(
@@ -123,7 +131,7 @@ class _CustomerHomeState extends State<CustomerHome> {
             ),
           ),
         ],
-      ),
+      )),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),

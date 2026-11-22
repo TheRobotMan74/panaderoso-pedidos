@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../models.dart';
 import '../services/repo.dart';
+import '../web/map_fallback.dart';
 import 'location_picker_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -211,6 +212,9 @@ class _MapPreview extends StatelessWidget {
         height: 170,
         child: Stack(
           children: [
+            if (!mapsUsable)
+              MapFallback(message: 'Casa marcada (${lat!.toStringAsFixed(5)}, ${lng!.toStringAsFixed(5)})')
+            else
             GoogleMap(
               // Modo ligero: una imagen fija del mapa, gasta menos.
               liteModeEnabled: true,
