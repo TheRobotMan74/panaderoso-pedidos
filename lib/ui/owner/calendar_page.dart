@@ -1,9 +1,12 @@
+import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
+import '../theme.dart';
+import '../widgets.dart';
 
 /// Días de entrega: el dueño abre días con sus horarios.
 /// Se puede pedir hasta que el dueño pica "Empezar a repartir" ese día.
@@ -16,30 +19,31 @@ class CalendarPage extends StatelessWidget {
       body: StreamBuilder<List<DeliveryDay>>(
         stream: Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())),
         builder: (context, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snap.hasData) return const SkeletonList(count: 4);
           final days = snap.data!;
           if (days.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('No hay días abiertos. Toca "Abrir días" para publicar tus próximas entregas.',
-                    textAlign: TextAlign.center),
-              ),
+            return const EmptyState(
+              title: 'No hay días abiertos',
+              message: 'Toca "Abrir días" para publicar tus próximas entregas.',
             );
           }
           return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
-            children: [for (final d in days) _DayTile(day: d)],
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
+            children: [
+              for (final (i, d) in days.indexed)
+                FadeSlideIn(index: i, child: _DayTile(key: ValueKey(d.date), day: d)),
+            ],
           );
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'abrir-dias',
         onPressed: () => showModalBottomSheet<void>(
           context: context,
           isScrollControlled: true,
           builder: (_) => const _OpenDaysSheet(),
         ),
-        icon: const Icon(Icons.add),
+        icon: const Icon(Icons.event_available_rounded),
         label: const Text('Abrir días'),
       ),
     );
@@ -48,7 +52,7 @@ class CalendarPage extends StatelessWidget {
 
 class _DayTile extends StatelessWidget {
   final DeliveryDay day;
-  const _DayTile({required this.day});
+  const _DayTile({super.key, required this.day});
 
   @override
   Widget build(BuildContext context) {
@@ -58,13 +62,62 @@ class _DayTile extends StatelessWidget {
         ? 'Sin horarios'
         : '${slotLabel(first, minutes: day.slotMinutes).split(' a ').first} a '
             '${slotLabel(last, minutes: day.slotMinutes).split(' a ').last}';
-    return Card(
-      child: ListTile(
-        title: Text(dayLabel(day.date)),
-        subtitle: Text(day.closed ? '$hours · repartiendo, pedidos cerrados' : hours),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
+    final date = parseDateKey(day.date);
+    final theme = Theme.of(context);
+    return PanCard(
+      padding: const EdgeInsets.fromLTRB(10, 10, 4, 10),
+      child: AnimatedOpacity(
+        opacity: day.open ? 1 : 0.55,
+        duration: Motion.of(context, Motion.medio),
+        child: Row(
           children: [
+            AnimatedContainer(
+              duration: Motion.of(context, Motion.medio),
+              width: 58,
+              height: 64,
+              decoration: BoxDecoration(
+                gradient: day.open ? Pan.gradienteMiel : null,
+                color: day.open ? null : Pan.harina,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(DateFormat('EEE', 'es_MX').format(date).replaceAll('.', '').toUpperCase(),
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: Pan.tostado)),
+                  Text('${date.day}',
+                      style: const TextStyle(
+                          fontFamily: 'Fraunces',
+                          fontSize: 24,
+                          fontWeight: FontWeight.w700,
+                          color: Pan.cacao,
+                          height: 1.1)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(capitalize(dayLabel(day.date)), style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(hours, style: theme.textTheme.bodyMedium),
+                  Text(
+                    day.closed
+                        ? 'Repartiendo · pedidos cerrados'
+                        : day.open
+                            ? 'Recibiendo pedidos'
+                            : 'Apagado: no se ve en la app',
+                    style: theme.textTheme.bodySmall!.copyWith(
+                      color: day.closed ? Pan.ciruela : (day.open ? Pan.salvia : Pan.canela),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             Switch(
               value: day.open,
               onChanged: (v) => Repo.instance.saveDeliveryDay(DeliveryDay(
@@ -77,7 +130,7 @@ class _DayTile extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Quitar día',
-              icon: const Icon(Icons.delete_outline),
+              icon: const Icon(Icons.delete_outline_rounded, color: Pan.canela),
               onPressed: () => Repo.instance.deleteDeliveryDay(day.date),
             ),
           ],
@@ -146,12 +199,12 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
     final dates = _dates;
     final valid = _endHour > _startHour && dates.isNotEmpty;
     return Padding(
-      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Abrir días de entrega', style: Theme.of(context).textTheme.titleLarge),
+          Text('Abrir días de entrega', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 12),
           Wrap(
             spacing: 6,
@@ -188,12 +241,11 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: valid && !_busy ? _save : null,
-              child: const Text('Abrir'),
-            ),
+          HoneyButton(
+            label: dates.isEmpty ? 'Abrir' : 'Abrir ${dates.length} días',
+            icon: Icons.event_available_rounded,
+            busy: _busy,
+            onPressed: valid ? _save : null,
           ),
         ],
       ),

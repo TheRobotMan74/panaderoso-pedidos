@@ -3,6 +3,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'theme.dart';
+import 'widgets.dart';
+
 /// Lo que regresa el mapa: el punto elegido y la dirección que encontró (si encontró).
 class PickedLocation {
   final double lat;
@@ -39,6 +42,9 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   String _address = '';
   bool _lookingUp = false;
   bool _searching = false;
+
+  /// El mapa se está moviendo: el pin se levanta.
+  bool _moving = false;
 
   @override
   void initState() {
@@ -137,8 +143,12 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
             zoomControlsEnabled: false,
             mapToolbarEnabled: false,
             onCameraMove: (c) => _center = c.target,
-            onCameraMoveStarted: () => setState(() => _chosen = true),
+            onCameraMoveStarted: () => setState(() {
+              _chosen = true;
+              _moving = true;
+            }),
             onCameraIdle: () {
+              if (_moving) setState(() => _moving = false);
               if (_chosen) _lookupAddress();
             },
           ),
@@ -146,8 +156,32 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
           IgnorePointer(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 44),
-                child: Icon(Icons.location_on, size: 48, color: theme.colorScheme.error),
+                padding: const EdgeInsets.only(bottom: 52),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedSlide(
+                      offset: _moving ? const Offset(0, -0.25) : Offset.zero,
+                      duration: Motion.of(context, Motion.rapido),
+                      curve: _moving ? Curves.easeOut : Curves.bounceOut,
+                      child: const Icon(Icons.location_on_rounded, size: 52, color: Pan.caramelo,
+                          shadows: [Shadow(color: Color(0x553B2A1E), blurRadius: 8, offset: Offset(0, 3))]),
+                    ),
+                    // Sombrita en el piso: se achica cuando el pin se levanta.
+                    AnimatedScale(
+                      scale: _moving ? 0.6 : 1,
+                      duration: Motion.of(context, Motion.rapido),
+                      child: Container(
+                        width: 14,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: const Color(0x553B2A1E),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -156,8 +190,11 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
             right: 12,
             top: 12,
             child: Material(
-              elevation: 3,
-              borderRadius: BorderRadius.circular(28),
+              elevation: 4,
+              color: Pan.papel,
+              shadowColor: const Color(0x553B2A1E),
+              borderRadius: BorderRadius.circular(20),
+              clipBehavior: Clip.antiAlias,
               child: TextField(
                 controller: _search,
                 textInputAction: TextInputAction.search,
@@ -173,6 +210,9 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                         )
                       : IconButton(icon: const Icon(Icons.arrow_forward), onPressed: _doSearch),
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false,
                   contentPadding: const EdgeInsets.symmetric(vertical: 16),
                 ),
               ),
@@ -193,34 +233,35 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
             right: 0,
             bottom: 0,
             child: Material(
-              elevation: 8,
-              color: theme.colorScheme.surface,
+              elevation: 10,
+              color: Pan.papel,
+              shadowColor: const Color(0x553B2A1E),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
               child: SafeArea(
                 top: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
+                      AnimatedCount(
                         !_chosen
                             ? 'Mueve el mapa hasta que el pin quede en tu casa.'
                             : _lookingUp
                                 ? 'Buscando la dirección…'
                                 : (_address.isEmpty ? 'Punto marcado en el mapa' : _address),
-                        style: theme.textTheme.bodyLarge,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium,
+                        alignment: Alignment.centerLeft,
                       ),
-                      const SizedBox(height: 10),
-                      FilledButton.icon(
+                      const SizedBox(height: 14),
+                      HoneyButton(
                         onPressed: _chosen
                             ? () => Navigator.pop(
                                 context, PickedLocation(_center.latitude, _center.longitude, _address))
                             : null,
-                        icon: const Icon(Icons.check),
-                        label: const Text('Aquí es mi casa'),
+                        icon: Icons.check_rounded,
+                        label: 'Aquí es mi casa',
                       ),
                     ],
                   ),

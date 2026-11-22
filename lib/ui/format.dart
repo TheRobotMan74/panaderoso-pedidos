@@ -12,3 +12,6 @@ String dayLabel(String dateKey) =>
 
 /// "20 nov, 6:00 p. m."
 String dateTimeLabel(DateTime d) => DateFormat("d MMM, h:mm a", 'es_MX').format(d);
+
+/// "lunes 23" → "Lunes 23".
+String capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);

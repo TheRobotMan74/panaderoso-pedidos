@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import '../models.dart';
 import '../services/repo.dart';
 import 'location_picker_page.dart';
+import 'theme.dart';
+import 'widgets.dart';
 
 /// Datos del cliente: nombre, teléfono y dirección de entrega.
 class ProfilePage extends StatefulWidget {
@@ -87,12 +89,31 @@ class _ProfilePageState extends State<ProfilePage> {
       body: Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
           children: [
+            if (!widget.editing)
+              FadeSlideIn(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 18),
+                  child: Row(
+                    children: [
+                      const BearLogo(size: 56),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Text(
+                          '¡Bienvenido! Dinos a dónde llevarte el pan.',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             TextFormField(
               controller: _name,
               validator: _required,
-              decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                  labelText: 'Nombre', prefixIcon: Icon(Icons.person_outline_rounded)),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -100,11 +121,9 @@ class _ProfilePageState extends State<ProfilePage> {
               validator: _required,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(
-                  labelText: 'Teléfono (WhatsApp)', border: OutlineInputBorder()),
+                  labelText: 'Teléfono (WhatsApp)', prefixIcon: Icon(Icons.phone_iphone_rounded)),
             ),
-            const SizedBox(height: 20),
-            Text('Tu casa en el mapa', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 8),
+            const SectionTitle('Tu casa en el mapa'),
             _MapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
             const SizedBox(height: 12),
             TextFormField(
@@ -114,7 +133,7 @@ class _ProfilePageState extends State<ProfilePage> {
               decoration: const InputDecoration(
                 labelText: 'Dirección: calle, número y colonia',
                 helperText: 'Se llena sola al marcar el mapa; corrígela si hace falta',
-                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.home_outlined),
               ),
             ),
             const SizedBox(height: 12),
@@ -123,11 +142,16 @@ class _ProfilePageState extends State<ProfilePage> {
               decoration: const InputDecoration(
                 labelText: 'Referencias (opcional)',
                 hintText: 'Ej. portón negro, tocar el timbre',
-                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.sticky_note_2_outlined),
               ),
             ),
-            const SizedBox(height: 20),
-            FilledButton(onPressed: _busy ? null : _save, child: const Text('Guardar')),
+            const SizedBox(height: 24),
+            HoneyButton(
+              label: 'Guardar',
+              icon: Icons.check_rounded,
+              busy: _busy,
+              onPressed: _save,
+            ),
           ],
         ),
       ),
@@ -150,12 +174,25 @@ class _MapPreview extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          OutlinedButton.icon(
-            onPressed: onTap,
-            icon: const Icon(Icons.map),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Text('Marcar mi casa en el mapa'),
+          PanCard(
+            onTap: onTap,
+            margin: EdgeInsets.zero,
+            color: error ? const Color(0xFFFBE7E2) : const Color(0xFFFFF4D6),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: const BoxDecoration(gradient: Pan.gradienteMiel, shape: BoxShape.circle),
+                  child: const Icon(Icons.location_on_rounded, color: Pan.cacao),
+                ),
+                const SizedBox(width: 14),
+                const Expanded(
+                  child: Text('Marcar mi casa en el mapa',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                ),
+                const Icon(Icons.chevron_right_rounded, color: Pan.caramelo),
+              ],
             ),
           ),
           if (error)
@@ -169,9 +206,9 @@ class _MapPreview extends StatelessWidget {
     }
     final at = LatLng(lat!, lng!);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(Pan.radio),
       child: SizedBox(
-        height: 160,
+        height: 170,
         child: Stack(
           children: [
             GoogleMap(

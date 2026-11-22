@@ -4,7 +4,10 @@ import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
+import '../product_image.dart';
 import '../status_chip.dart';
+import '../theme.dart';
+import '../widgets.dart';
 import 'tracking_page.dart';
 
 class MyOrdersPage extends StatelessWidget {
@@ -22,69 +25,133 @@ class MyOrdersPage extends StatelessWidget {
       stream: Repo.instance.myOrders(uid),
       builder: (context, snap) {
         if (snap.hasError) {
-          return Center(child: Text('No se pudieron cargar tus pedidos.\n${snap.error}'));
+          return EmptyState(
+            title: 'Ups, no cargaron tus pedidos',
+            message: 'Revisa tu internet e intenta de nuevo.\n${snap.error}',
+          );
         }
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        if (!snap.hasData) return const SkeletonList(count: 3);
         final orders = snap.data!;
         if (orders.isEmpty) {
-          return const Center(child: Text('Aún no tienes pedidos.'));
+          return const EmptyState(
+            title: 'Aún no tienes pedidos',
+            message: 'Cuando pidas tu pan, aquí verás cómo va, paso a paso.',
+          );
         }
         return ListView.builder(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           itemCount: orders.length,
-          itemBuilder: (context, i) {
-            final o = orders[i];
-            return Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
+          itemBuilder: (context, i) => FadeSlideIn(
+            index: i,
+            child: _OrderCard(order: orders[i], homeLat: homeLat, homeLng: homeLng),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _OrderCard extends StatelessWidget {
+  final BakeryOrder order;
+  final double? homeLat;
+  final double? homeLng;
+  const _OrderCard({required this.order, this.homeLat, this.homeLng});
+
+  @override
+  Widget build(BuildContext context) {
+    final o = order;
+    final theme = Theme.of(context);
+    // El día de la entrega se puede ver por dónde va el repartidor.
+    final canTrack = o.isPending &&
+        (o.status == OrderStatus.enCamino || o.deliveryDate == dateKey(DateTime.now()));
+    final isCash = o.paymentMethod == PaymentMethod.efectivo;
+    return PanCard(
+      margin: const EdgeInsets.symmetric(vertical: 7),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(capitalize(dayLabel(o.deliveryDate)),
+                        style: theme.textTheme.titleLarge!.copyWith(fontSize: 20)),
+                    const SizedBox(height: 2),
                     Row(
                       children: [
-                        Expanded(
-                          child: Text(
-                            '${dayLabel(o.deliveryDate)}, ${slotLabel(o.slot)}',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                        ),
-                        StatusChip(status: o.status),
+                        const Icon(Icons.schedule_rounded, size: 15, color: Pan.canela),
+                        const SizedBox(width: 4),
+                        Text(slotLabel(o.slot), style: theme.textTheme.bodySmall),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(o.items.map((i) => '${i.qty} ${i.name}').join(', ')),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${money(o.total)} · '
-                      '${o.paymentMethod == PaymentMethod.efectivo ? 'Efectivo' : 'Transferencia'}'
-                      '${o.paymentVerified ? ' (pago verificado)' : ''}',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                    // El día de la entrega se puede ver por dónde va el repartidor.
-                    if (o.isPending &&
-                        (o.status == OrderStatus.enCamino ||
-                            o.deliveryDate == dateKey(DateTime.now())))
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: FilledButton.tonalIcon(
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  TrackingPage(order: o, homeLat: homeLat, homeLng: homeLng),
-                            ),
-                          ),
-                          icon: const Icon(Icons.map),
-                          label: const Text('Ver dónde va mi pedido'),
-                        ),
-                      ),
                   ],
                 ),
               ),
-            );
-          },
-        );
-      },
+              StatusChip(status: o.status),
+            ],
+          ),
+          if (o.status != OrderStatus.cancelado) ...[
+            const SizedBox(height: 16),
+            OrderProgress(status: o.status),
+          ],
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFBF4E6),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                for (final it in o.items)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Row(
+                      children: [
+                        Text(productArt(it.name).$1, style: const TextStyle(fontSize: 16)),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('${it.qty} × ${it.name}', style: theme.textTheme.bodyMedium)),
+                        Text(money(it.total), style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(isCash ? Icons.payments_rounded : Icons.account_balance_rounded,
+                  size: 17, color: Pan.canela),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${isCash ? 'Efectivo' : 'Transferencia'}${o.paymentVerified ? ' · pago verificado ✓' : ''}',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+              Text(money(o.total),
+                  style: theme.textTheme.titleLarge!.copyWith(color: Pan.caramelo, fontSize: 19)),
+            ],
+          ),
+          if (canTrack) ...[
+            const SizedBox(height: 12),
+            HoneyButton(
+              icon: Icons.map_rounded,
+              label: 'Ver dónde va mi pedido',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TrackingPage(order: o, homeLat: homeLat, homeLng: homeLng),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

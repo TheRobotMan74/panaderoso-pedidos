@@ -11,6 +11,8 @@ import 'ui/customer/customer_home.dart';
 import 'ui/login_page.dart';
 import 'ui/owner/owner_home.dart';
 import 'ui/profile_page.dart';
+import 'ui/theme.dart';
+import 'ui/widgets.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,10 +31,7 @@ class PanaderosoApp extends StatelessWidget {
     return MaterialApp(
       title: 'Panaderoso',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFB5651D)),
-        useMaterial3: true,
-      ),
+      theme: buildPanTheme(),
       home: DefaultFirebaseOptions.isConfigured
           ? const AuthGate()
           : const _NotConfiguredPage(),
@@ -51,18 +50,23 @@ class AuthGate extends StatelessWidget {
       builder: (context, auth) {
         if (auth.connectionState == ConnectionState.waiting) return const _Loading();
         final fbUser = auth.data;
-        if (fbUser == null) return const LoginPage();
+        if (fbUser == null) return const FadeThroughSwitcher(child: LoginPage());
         return StreamBuilder<AppUser?>(
           stream: Repo.instance.userStream(fbUser.uid),
           builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) return const _Loading();
+            final Widget page;
             final user = snap.data;
             // Los clientes deben marcar su casa en el mapa (las cuentas viejas también, una vez).
             final needsPin = user != null && user.role == Role.cliente && !user.hasLocation;
-            if (user == null || user.name.isEmpty || user.address.isEmpty || needsPin) {
-              return ProfilePage(uid: fbUser.uid, existing: user);
+            if (snap.connectionState == ConnectionState.waiting) {
+              page = const _Loading(key: ValueKey('cargando'));
+            } else if (user == null || user.name.isEmpty || user.address.isEmpty || needsPin) {
+              page = ProfilePage(key: const ValueKey('perfil'), uid: fbUser.uid, existing: user);
+            } else {
+              page = _RoleHome(key: const ValueKey('inicio'), user: user);
             }
-            return _RoleHome(user: user);
+            // Del oso de "cargando" a la app con un fundido suave.
+            return FadeThroughSwitcher(child: page);
           },
         );
       },
@@ -72,7 +76,7 @@ class AuthGate extends StatelessWidget {
 
 class _RoleHome extends StatefulWidget {
   final AppUser user;
-  const _RoleHome({required this.user});
+  const _RoleHome({super.key, required this.user});
 
   @override
   State<_RoleHome> createState() => _RoleHomeState();
@@ -107,11 +111,13 @@ class _RoleHomeState extends State<_RoleHome> {
 }
 
 class _Loading extends StatelessWidget {
-  const _Loading();
+  const _Loading({super.key});
 
   @override
-  Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: CircularProgressIndicator()));
+  Widget build(BuildContext context) => const Scaffold(
+        backgroundColor: Pan.crema,
+        body: Center(child: FloatingBear(size: 112)),
+      );
 }
 
 class _NotConfiguredPage extends StatelessWidget {

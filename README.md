@@ -45,6 +45,17 @@ Se configura con tres secretos del repositorio (Settings → Secrets and variabl
 `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD` y `ANDROID_KEY_ALIAS`.
 Sin ellos, la APK se firma con una llave de pruebas que cambia en cada armado.
 
+## Diseño
+
+Estilo cálido de panadería, con los colores del oso del ícono: miel y caramelo sobre papel crema.
+
+- Colores, letras y transiciones: `lib/ui/theme.dart`. Letras Fraunces (títulos) y Nunito (texto),
+  incluidas en `assets/fonts/` (licencia OFL) para que se vean igual sin internet.
+- Piezas reutilizables y animaciones (tarjetas, botón de miel, esqueletos de carga, cascada al aparecer,
+  oso flotando, puntito "en vivo"): `lib/ui/widgets.dart`.
+- Las animaciones solo usan opacidad, movimiento y escala (baratas en celulares sencillos) y se apagan solas
+  si el celular tiene activado "Quitar animaciones" en Accesibilidad.
+
 ## Datos
 
 | Colección | Qué guarda | Quién escribe |

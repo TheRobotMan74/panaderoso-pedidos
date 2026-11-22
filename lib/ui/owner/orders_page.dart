@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -5,7 +6,10 @@ import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
+import '../product_image.dart';
 import '../status_chip.dart';
+import '../theme.dart';
+import '../widgets.dart';
 
 /// Pedidos en vivo, agrupados por día y horario.
 class OrdersPage extends StatelessWidget {
@@ -16,15 +20,20 @@ class OrdersPage extends StatelessWidget {
     return StreamBuilder<List<BakeryOrder>>(
       stream: Repo.instance.ordersFrom(dateKey(DateTime.now())),
       builder: (context, snap) {
-        if (snap.hasError) return Center(child: Text('Error: ${snap.error}'));
-        if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+        if (snap.hasError) {
+          return EmptyState(title: 'No cargaron los pedidos', message: '${snap.error}');
+        }
+        if (!snap.hasData) return const SkeletonList(count: 3);
         final orders = snap.data!.where((o) => o.status != OrderStatus.cancelado).toList()
           ..sort((a, b) {
             final c = a.deliveryDate.compareTo(b.deliveryDate);
             return c != 0 ? c : a.slot.compareTo(b.slot);
           });
         if (orders.isEmpty) {
-          return const Center(child: Text('No hay pedidos pendientes.'));
+          return const EmptyState(
+            title: 'Todo tranquilo por aquí',
+            message: 'No hay pedidos pendientes. Cuando llegue uno, aparece aquí al momento.',
+          );
         }
         final children = <Widget>[];
         String? lastDate;
@@ -33,22 +42,46 @@ class OrdersPage extends StatelessWidget {
           if (o.deliveryDate != lastDate) {
             lastDate = o.deliveryDate;
             lastSlot = null;
-            children.add(Padding(
-              padding: const EdgeInsets.fromLTRB(4, 16, 4, 4),
-              child: Text(dayLabel(o.deliveryDate),
-                  style: Theme.of(context).textTheme.titleLarge),
+            final count = orders.where((x) => x.deliveryDate == o.deliveryDate).length;
+            children.add(SectionTitle(
+              capitalize(dayLabel(o.deliveryDate)),
+              trailing: Text('$count ${count == 1 ? 'pedido' : 'pedidos'}',
+                  style: Theme.of(context).textTheme.bodySmall),
             ));
           }
           if (o.slot != lastSlot) {
             lastSlot = o.slot;
             children.add(Padding(
-              padding: const EdgeInsets.fromLTRB(4, 8, 4, 4),
-              child: Text(slotLabel(o.slot), style: Theme.of(context).textTheme.titleSmall),
+              padding: const EdgeInsets.fromLTRB(2, 6, 2, 4),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Pan.harina,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.schedule_rounded, size: 14, color: Pan.tostado),
+                        const SizedBox(width: 4),
+                        Text(slotLabel(o.slot),
+                            style: const TextStyle(fontWeight: FontWeight.w800, color: Pan.tostado)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ));
           }
-          children.add(_OrderCard(order: o));
+          children.add(_OrderCard(key: ValueKey(o.id), order: o));
         }
-        return ListView(padding: const EdgeInsets.all(12), children: children);
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          itemCount: children.length,
+          itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
+        );
       },
     );
   }
@@ -56,7 +89,7 @@ class OrdersPage extends StatelessWidget {
 
 class _OrderCard extends StatelessWidget {
   final BakeryOrder order;
-  const _OrderCard({required this.order});
+  const _OrderCard({super.key, required this.order});
 
   static const _next = {
     OrderStatus.recibido: (OrderStatus.confirmado, 'Confirmar'),
@@ -122,66 +155,137 @@ class _OrderCard extends StatelessWidget {
     final theme = Theme.of(context);
     final next = _next[o.status];
     final isCash = o.paymentMethod == PaymentMethod.efectivo;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: Text(o.customerName, style: theme.textTheme.titleMedium)),
-                StatusChip(status: o.status),
-              ],
-            ),
-            Text(o.address),
-            if (o.addressNotes.isNotEmpty) Text(o.addressNotes, style: theme.textTheme.bodySmall),
-            SelectableText('Tel. ${o.phone}', style: theme.textTheme.bodySmall),
-            const SizedBox(height: 6),
-            Text(o.items.map((i) => '${i.qty} ${i.name}').join(', ')),
-            if (o.notes.isNotEmpty) Text('Nota: ${o.notes}', style: theme.textTheme.bodySmall),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Text(money(o.total), style: theme.textTheme.titleSmall),
-                const SizedBox(width: 8),
-                Icon(isCash ? Icons.payments : Icons.account_balance, size: 18),
-                const SizedBox(width: 4),
-                Text(isCash
-                    ? (o.cashCollected ? 'Efectivo, cobrado' : 'Efectivo, por cobrar')
-                    : (o.paymentVerified ? 'Transferencia verificada' : 'Transferencia por revisar')),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                if (next != null)
-                  FilledButton(
-                    onPressed: () => Repo.instance.updateOrder(o.id, {'status': next.$1.name}),
-                    child: Text(next.$2),
+    final (accent, _, _) = statusStyle(o.status);
+    return PanCard(
+      padding: EdgeInsets.zero,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(Pan.radio),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Franja de color según el estado.
+              AnimatedContainer(
+                duration: Motion.of(context, Motion.medio),
+                width: 6,
+                color: accent,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: Text(o.customerName, style: theme.textTheme.titleMedium)),
+                          StatusChip(status: o.status),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      _line(Icons.place_outlined, o.address, theme.textTheme.bodyMedium!),
+                      if (o.addressNotes.isNotEmpty)
+                        _line(Icons.sticky_note_2_outlined, o.addressNotes, theme.textTheme.bodySmall!),
+                      _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: true),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          for (final it in o.items)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF4D6),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text('${productArt(it.name).$1} ${it.qty} ${it.name}',
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                            ),
+                        ],
+                      ),
+                      if (o.notes.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Text('📝 ${o.notes}', style: theme.textTheme.bodySmall),
+                      ],
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Text(money(o.total),
+                              style: theme.textTheme.titleLarge!.copyWith(color: Pan.caramelo, fontSize: 19)),
+                          const SizedBox(width: 10),
+                          Icon(isCash ? Icons.payments_rounded : Icons.account_balance_rounded,
+                              size: 17, color: Pan.canela),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              isCash
+                                  ? (o.cashCollected ? 'Efectivo, cobrado' : 'Efectivo, por cobrar')
+                                  : (o.paymentVerified ? 'Transferencia verificada' : 'Transferencia por revisar'),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (next != null)
+                            FilledButton(
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                Repo.instance.updateOrder(o.id, {'status': next.$1.name});
+                              },
+                              style: FilledButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10)),
+                              child: Text(next.$2),
+                            ),
+                          if (o.status != OrderStatus.entregado)
+                            OutlinedButton.icon(
+                              onPressed: _directions,
+                              icon: const Icon(Icons.directions_rounded, size: 18),
+                              label: const Text('Cómo llegar'),
+                            ),
+                          if (!isCash && o.paymentProofPath != null)
+                            OutlinedButton(onPressed: () => _showProof(context), child: const Text('Ver captura')),
+                          if (isCash && !o.cashCollected)
+                            OutlinedButton(
+                              onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
+                              child: const Text('Cobrado'),
+                            ),
+                          if (o.status != OrderStatus.entregado)
+                            TextButton(
+                              onPressed: () => _cancel(context),
+                              style: TextButton.styleFrom(foregroundColor: Pan.terracota),
+                              child: const Text('Cancelar'),
+                            ),
+                        ],
+                      ),
+                    ],
                   ),
-                if (o.status != OrderStatus.entregado)
-                  OutlinedButton.icon(
-                    onPressed: _directions,
-                    icon: const Icon(Icons.directions, size: 18),
-                    label: const Text('Cómo llegar'),
-                  ),
-                if (!isCash && o.paymentProofPath != null)
-                  OutlinedButton(onPressed: () => _showProof(context), child: const Text('Ver captura')),
-                if (isCash && !o.cashCollected)
-                  OutlinedButton(
-                    onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
-                    child: const Text('Cobrado'),
-                  ),
-                if (o.status != OrderStatus.entregado)
-                  TextButton(onPressed: () => _cancel(context), child: const Text('Cancelar')),
-              ],
-            ),
-          ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _line(IconData icon, String text, TextStyle style, {bool selectable = false}) => Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(icon, size: 15, color: Pan.canela),
+            ),
+            const SizedBox(width: 6),
+            Expanded(child: selectable ? SelectableText(text, style: style) : Text(text, style: style)),
+          ],
+        ),
+      );
 }

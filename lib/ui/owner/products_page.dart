@@ -7,6 +7,8 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../product_image.dart';
+import '../theme.dart';
+import '../widgets.dart';
 
 class ProductsPage extends StatelessWidget {
   const ProductsPage({super.key});
@@ -17,19 +19,44 @@ class ProductsPage extends StatelessWidget {
       body: StreamBuilder<List<Product>>(
         stream: Repo.instance.products(),
         builder: (context, snap) {
-          if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+          if (!snap.hasData) return const SkeletonList(withImage: true, count: 4);
           final products = snap.data!;
+          if (products.isEmpty) {
+            return const EmptyState(
+              title: 'Tu vitrina está vacía',
+              message: 'Toca "Producto" para agregar tu primer pan.',
+            );
+          }
           return ListView(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 96),
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 96),
             children: [
-              for (final p in products)
-                Card(
-                  clipBehavior: Clip.antiAlias,
-                  child: ListTile(
-                    leading: ProductImage(url: p.imageUrl, size: 48),
-                    title: Text(p.name),
-                    subtitle: Text('${money(p.price)}${p.available ? '' : ' · agotado'}'),
-                    trailing: Switch(
+              for (final (i, p) in products.indexed)
+                FadeSlideIn(
+                  index: i,
+                  child: PanCard(
+                    padding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+                    onTap: () => _edit(context, p, products.length),
+                    child: Row(
+                      children: [
+                        ProductImage(url: p.imageUrl, name: p.name, size: 60, radius: 16),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(p.name, style: Theme.of(context).textTheme.titleSmall),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${money(p.price)}${p.available ? '' : ' · agotado'}',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: p.available ? Pan.caramelo : Pan.canela,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Switch(
                       value: p.available,
                       onChanged: (v) => Repo.instance.saveProduct(Product(
                         id: p.id,
@@ -38,10 +65,11 @@ class ProductsPage extends StatelessWidget {
                         price: p.price,
                         imageUrl: p.imageUrl,
                         available: v,
-                        sortOrder: p.sortOrder,
-                      )),
+                            sortOrder: p.sortOrder,
+                          )),
+                        ),
+                      ],
                     ),
-                    onTap: () => _edit(context, p, products.length),
                   ),
                 ),
             ],
@@ -51,6 +79,7 @@ class ProductsPage extends StatelessWidget {
       floatingActionButton: StreamBuilder<List<Product>>(
         stream: Repo.instance.products(),
         builder: (context, snap) => FloatingActionButton.extended(
+          heroTag: 'nuevo-producto',
           onPressed: () => _edit(context, null, snap.data?.length ?? 0),
           icon: const Icon(Icons.add),
           label: const Text('Producto'),
@@ -122,33 +151,37 @@ class _ProductFormState extends State<_ProductForm> {
             child: GestureDetector(
               onTap: _pick,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(28),
                 child: _newImage != null
-                    ? Image.file(_newImage!, width: 160, height: 160, fit: BoxFit.cover)
-                    : ProductImage(url: _imageUrl, size: 160),
+                    ? Image.file(_newImage!, width: 180, height: 180, fit: BoxFit.cover, cacheWidth: 540)
+                    : ProductImage(url: _imageUrl, name: _name.text, size: 180),
               ),
             ),
           ),
-          TextButton(onPressed: _pick, child: const Text('Elegir foto')),
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: _pick,
+            icon: const Icon(Icons.photo_camera_outlined),
+            label: const Text('Elegir foto'),
+          ),
+          const SizedBox(height: 10),
           TextField(
             controller: _name,
-            decoration: const InputDecoration(labelText: 'Nombre', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Nombre'),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _desc,
-            decoration: const InputDecoration(
-                labelText: 'Descripción (opcional)', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Descripción (opcional)'),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _price,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-                labelText: 'Precio', prefixText: r'$ ', border: OutlineInputBorder()),
+            decoration: const InputDecoration(labelText: 'Precio', prefixText: r'$ '),
           ),
-          const SizedBox(height: 20),
-          FilledButton(onPressed: _busy ? null : _save, child: const Text('Guardar')),
+          const SizedBox(height: 24),
+          HoneyButton(label: 'Guardar', icon: Icons.check_rounded, busy: _busy, onPressed: _save),
         ],
       ),
     );
