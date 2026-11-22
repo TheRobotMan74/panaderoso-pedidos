@@ -362,9 +362,10 @@ class _StockFields extends StatelessWidget {
               decoration: InputDecoration(
                 labelText: g.shared ? '${g.label} (${g.products.length} productos)' : g.label,
                 helperText: [
-                  if (g.shared) g.productNames,
                   if ((used[g.key] ?? 0) > 0) 'Ya pedidos: ${used[g.key]}',
+                  if (g.shared) g.productNames,
                 ].join(' · '),
+                helperMaxLines: 2,
                 hintText: 'Sin límite',
                 suffixText: 'panes',
                 prefixIcon: const Icon(Icons.bakery_dining_outlined),

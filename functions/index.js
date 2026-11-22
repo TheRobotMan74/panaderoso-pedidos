@@ -407,7 +407,7 @@ exports.moverDia = onCall(async (req) => {
   // El cupo del día viejo y del nuevo se recuentan solos al moverse los pedidos.
   for (const a of avisos) {
     try {
-      await avisarCliente(a.uid, 'Cambiamos tu entrega 📅',
+      await avisarCliente(a.uid, 'Cambiamos tu entrega 🗓️',
         `Tu pedido ahora llega el ${diaBonito(to)}, de ${horarioBonito(a.slot, slotMinutes)}. ¡Gracias por tu paciencia!`);
     } catch (e) {
       console.error('No se pudo avisar a', a.uid, e);

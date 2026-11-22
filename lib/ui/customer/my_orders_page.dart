@@ -179,7 +179,7 @@ class _MovedNotice extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('📅', style: TextStyle(fontSize: 20)),
+          const Icon(Icons.edit_calendar_rounded, color: Pan.cielo, size: 22),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
