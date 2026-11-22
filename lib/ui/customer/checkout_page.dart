@@ -61,6 +61,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         // se conecta en la fase 2, junto con el mapa.
         shippingFee: 0,
         notes: _notes.text.trim(),
+        lat: u.lat,
+        lng: u.lng,
       ));
       widget.cart.clear();
       if (!mounted) return;

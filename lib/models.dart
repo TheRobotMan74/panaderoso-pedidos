@@ -13,6 +13,10 @@ class AppUser {
   final String addressNotes;
   final Role role;
 
+  /// Ubicación de la casa, marcada en el mapa. Null en cuentas viejas.
+  final double? lat;
+  final double? lng;
+
   const AppUser({
     required this.uid,
     required this.name,
@@ -20,7 +24,11 @@ class AppUser {
     required this.address,
     this.addressNotes = '',
     this.role = Role.cliente,
+    this.lat,
+    this.lng,
   });
+
+  bool get hasLocation => lat != null && lng != null;
 
   factory AppUser.fromMap(String uid, Map<String, dynamic> m) => AppUser(
         uid: uid,
@@ -29,6 +37,8 @@ class AppUser {
         address: m['address'] as String? ?? '',
         addressNotes: m['addressNotes'] as String? ?? '',
         role: roleFromString(m['role'] as String?),
+        lat: (m['lat'] as num?)?.toDouble(),
+        lng: (m['lng'] as num?)?.toDouble(),
       );
 
   /// El rol no se escribe desde la app: solo se cambia en la consola de Firebase.
@@ -37,6 +47,8 @@ class AppUser {
         'phone': phone,
         'address': address,
         'addressNotes': addressNotes,
+        'lat': lat,
+        'lng': lng,
       };
 }
 
@@ -178,6 +190,13 @@ class BakeryOrder {
   final String notes;
   final DateTime? createdAt;
 
+  /// Ubicación de entrega (copiada del perfil al pedir).
+  final double? lat;
+  final double? lng;
+
+  /// Ya se le avisó al cliente que el repartidor está cerca.
+  final bool nearNotified;
+
   const BakeryOrder({
     required this.id,
     required this.customerId,
@@ -196,7 +215,15 @@ class BakeryOrder {
     this.shippingFee = 0,
     this.notes = '',
     this.createdAt,
+    this.lat,
+    this.lng,
+    this.nearNotified = false,
   });
+
+  bool get hasLocation => lat != null && lng != null;
+
+  /// Pendiente de entregar (ni entregado ni cancelado).
+  bool get isPending => status != OrderStatus.entregado && status != OrderStatus.cancelado;
 
   int get pieces => items.fold(0, (s, i) => s + i.qty);
   double get subtotal => items.fold(0.0, (s, i) => s + i.total);
@@ -224,6 +251,9 @@ class BakeryOrder {
         shippingFee: (m['shippingFee'] as num?)?.toInt() ?? 0,
         notes: m['notes'] as String? ?? '',
         createdAt: _toDate(m['createdAt']),
+        lat: (m['lat'] as num?)?.toDouble(),
+        lng: (m['lng'] as num?)?.toDouble(),
+        nearNotified: m['nearNotified'] as bool? ?? false,
       );
 
   /// Datos que escribe el cliente al crear el pedido.
@@ -246,6 +276,9 @@ class BakeryOrder {
         'cashCollected': false,
         'status': OrderStatus.recibido.name,
         'notes': notes,
+        'lat': lat,
+        'lng': lng,
+        'nearNotified': false,
       };
 }
 
@@ -256,11 +289,15 @@ class AppConfig {
   final String accountHolder;
   final ShippingRules shipping;
 
+  /// A cuántos metros del domicilio se le avisa al cliente que ya va a llegar.
+  final int nearAlertMeters;
+
   const AppConfig({
     this.bankName = '',
     this.clabe = '',
     this.accountHolder = '',
     this.shipping = const ShippingRules(),
+    this.nearAlertMeters = 1000,
   });
 
   factory AppConfig.fromMap(Map<String, dynamic>? m) => AppConfig(
@@ -269,6 +306,7 @@ class AppConfig {
         accountHolder: m?['accountHolder'] as String? ?? '',
         shipping: ShippingRules.fromMap(
             m?['shipping'] == null ? null : Map<String, dynamic>.from(m!['shipping'] as Map)),
+        nearAlertMeters: (m?['nearAlertMeters'] as num?)?.toInt() ?? 1000,
       );
 
   Map<String, dynamic> toMap() => {
@@ -276,7 +314,42 @@ class AppConfig {
         'clabe': clabe,
         'accountHolder': accountHolder,
         'shipping': shipping.toMap(),
+        'nearAlertMeters': nearAlertMeters,
       };
+}
+
+/// Ubicación en vivo del repartidor (documento tracking/current).
+class TrackingInfo {
+  final bool active;
+  final double? lat;
+  final double? lng;
+  final DateTime? updatedAt;
+
+  /// Día del reparto (AAAA-MM-DD).
+  final String date;
+
+  /// Clientes con pedido pendiente ese día: solo ellos pueden ver el mapa.
+  final List<String> viewers;
+
+  const TrackingInfo({
+    this.active = false,
+    this.lat,
+    this.lng,
+    this.updatedAt,
+    this.date = '',
+    this.viewers = const [],
+  });
+
+  bool get hasPosition => lat != null && lng != null;
+
+  factory TrackingInfo.fromMap(Map<String, dynamic>? m) => TrackingInfo(
+        active: m?['active'] as bool? ?? false,
+        lat: (m?['lat'] as num?)?.toDouble(),
+        lng: (m?['lng'] as num?)?.toDouble(),
+        updatedAt: _toDate(m?['updatedAt']),
+        date: m?['date'] as String? ?? '',
+        viewers: List<String>.from(m?['viewers'] as List? ?? const []),
+      );
 }
 
 /// Firestore entrega Timestamp; aquí se acepta cualquier cosa con toDate().

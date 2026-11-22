@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:panaderoso_pedidos/logic/demand.dart';
+import 'package:panaderoso_pedidos/logic/geo.dart';
 import 'package:panaderoso_pedidos/logic/schedule.dart';
 import 'package:panaderoso_pedidos/logic/shipping.dart';
 import 'package:panaderoso_pedidos/models.dart';
@@ -97,6 +98,51 @@ void main() {
       expect(d.slots.map((s) => s.slot), ['08:00', '09:00', '10:00']);
       expect(d.slots[0].pieces, 6);
       expect(d.slots[1].orders, 0);
+    });
+  });
+
+  group('Mapa y reparto', () {
+    test('distancia en línea recta', () {
+      // Zócalo CDMX → Bellas Artes: unos 900 m.
+      final d = distanceMeters(19.4326, -99.1332, 19.4352, -99.1412);
+      expect(d, inInclusiveRange(850, 950));
+      expect(distanceMeters(19.4, -99.1, 19.4, -99.1), 0);
+    });
+
+    test('textos de distancia y tiempo', () {
+      expect(distanceLabel(347), '350 m');
+      expect(distanceLabel(2440), '2.4 km');
+      final now = DateTime(2026, 11, 22, 10);
+      expect(agoLabel(now.subtract(const Duration(seconds: 20)), now), 'hace un momento');
+      expect(agoLabel(now.subtract(const Duration(minutes: 3)), now), 'hace 3 min');
+    });
+
+    test('el pedido guarda la ubicación y empieza sin aviso de cercanía', () {
+      final o = BakeryOrder(
+        id: '',
+        customerId: 'c',
+        customerName: 'Cliente',
+        phone: '',
+        address: 'Calle 1',
+        items: const [OrderItem(productId: 'p', name: 'Dona', price: 20, qty: 1)],
+        deliveryDate: '2026-11-23',
+        slot: '08:00',
+        paymentMethod: PaymentMethod.efectivo,
+        lat: 19.4,
+        lng: -99.1,
+      );
+      final m = o.toNewOrderMap();
+      expect(m['lat'], 19.4);
+      expect(m['nearNotified'], false);
+      final back = BakeryOrder.fromMap('x', m);
+      expect(back.hasLocation, true);
+      expect(back.isPending, true);
+    });
+
+    test('cuentas viejas sin mapa', () {
+      final u = AppUser.fromMap('u', {'name': 'A', 'phone': '1', 'address': 'Calle'});
+      expect(u.hasLocation, false);
+      expect(AppConfig.fromMap(null).nearAlertMeters, 1000);
     });
   });
 }

@@ -35,6 +35,10 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Llave de Google Maps para Android. Va en el código porque está restringida
+        // a esta app (paquete + huella de la llave de firma) y solo sirve para el mapa.
+        manifestPlaceholders["mapsApiKey"] =
+            (project.findProperty("MAPS_API_KEY") as String?) ?: System.getenv("MAPS_API_KEY") ?: ""
     }
 
     signingConfigs {

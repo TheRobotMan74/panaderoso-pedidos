@@ -63,7 +63,11 @@ class _CustomerHomeState extends State<CustomerHome> {
           ),
         ],
       ),
-      body: _tab == 0 ? _Catalog(cart: _cart) : MyOrdersPage(uid: widget.user.uid),
+      body: _tab == 0 ? _Catalog(cart: _cart) : MyOrdersPage(
+              uid: widget.user.uid,
+              homeLat: widget.user.lat,
+              homeLng: widget.user.lng,
+            ),
       floatingActionButton: _tab == 0
           ? ListenableBuilder(
               listenable: _cart,

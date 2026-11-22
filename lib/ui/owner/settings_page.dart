@@ -35,6 +35,8 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _perKm =
       TextEditingController(text: widget.initial.shipping.pricePerKm.toStringAsFixed(2));
   late bool _shippingEnabled = widget.initial.shipping.enabled;
+  late final _nearMeters =
+      TextEditingController(text: widget.initial.nearAlertMeters.toString());
 
   Future<void> _save() async {
     final old = widget.initial.shipping;
@@ -48,6 +50,8 @@ class _SettingsFormState extends State<_SettingsForm> {
         tiers: old.tiers,
         roundTo: old.roundTo,
       ),
+      nearAlertMeters: (int.tryParse(_nearMeters.text.trim()) ?? widget.initial.nearAlertMeters)
+          .clamp(100, 10000),
     ));
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guardado')));
@@ -106,6 +110,19 @@ class _SettingsFormState extends State<_SettingsForm> {
           child: Text(
             'El cobro por distancia se activa en la fase 2, cuando la app tenga el mapa.',
             style: theme.textTheme.bodySmall,
+          ),
+        ),
+        const Divider(height: 40),
+        Text('Reparto', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _nearMeters,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Avisar al cliente cuando estés a',
+            suffixText: 'metros',
+            helperText: '1000 m son como 2 o 3 minutos en carro',
+            border: OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 24),

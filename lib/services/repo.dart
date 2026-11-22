@@ -7,7 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../models.dart';
 
 /// Acceso a los datos en Firebase. Colecciones:
-/// users, products, deliveryDays, orders, config/app.
+/// users, products, deliveryDays, orders, config/app, tracking/current.
 class Repo {
   Repo._();
   static final instance = Repo._();
@@ -115,6 +115,50 @@ class Repo {
 
   List<BakeryOrder> _toOrders(QuerySnapshot<Map<String, dynamic>> s) =>
       s.docs.map((d) => BakeryOrder.fromMap(d.id, d.data())).toList();
+
+  // ---------- Reparto en vivo ----------
+
+  DocumentReference<Map<String, dynamic>> get _tracking =>
+      _db.collection('tracking').doc('current');
+
+  /// Ubicación del repartidor. El cliente solo la puede leer si tiene pedido ese día;
+  /// si no, el stream da error de permisos.
+  Stream<TrackingInfo> tracking() =>
+      _tracking.snapshots().map((s) => TrackingInfo.fromMap(s.data()));
+
+  Future<void> startTracking({
+    required String date,
+    required List<String> viewers,
+    required int alertMeters,
+  }) =>
+      _tracking.set({
+        'active': true,
+        'date': date,
+        'viewers': viewers,
+        'alertMeters': alertMeters,
+        'lat': null,
+        'lng': null,
+        'startedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+  Future<void> updateTrackingPosition(double lat, double lng) => _tracking.update({
+        'lat': lat,
+        'lng': lng,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+  Future<void> updateTrackingViewers(List<String> viewers) =>
+      _tracking.update({'viewers': viewers});
+
+  /// Termina el reparto y borra la ubicación.
+  Future<void> stopTracking() => _tracking.set({
+        'active': false,
+        'viewers': <String>[],
+        'lat': null,
+        'lng': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
 
   String get currentUid => FirebaseAuth.instance.currentUser!.uid;
 }

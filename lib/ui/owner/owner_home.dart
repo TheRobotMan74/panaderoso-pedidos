@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../models.dart';
 import 'calendar_page.dart';
+import 'delivery_banner.dart';
 import 'demand_page.dart';
 import 'orders_page.dart';
 import 'products_page.dart';
@@ -36,7 +37,9 @@ class _OwnerHomeState extends State<OwnerHome> {
         ],
       ),
       body: switch (_tab) {
-        0 => const OrdersPage(),
+        0 => const Column(
+            children: [DeliveryBanner(), Expanded(child: OrdersPage())],
+          ),
         1 => const DemandPage(),
         2 => const CalendarPage(),
         3 => const ProductsPage(),
