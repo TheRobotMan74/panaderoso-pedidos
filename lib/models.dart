@@ -250,6 +250,10 @@ class BakeryOrder {
   final String? movedFromDate;
   final String? movedFromSlot;
 
+  /// Duración del horario en minutos (la pone el servidor al pedir o mover; antes siempre era 60).
+  final int slotMinutes;
+  final int movedFromMinutes;
+
   const BakeryOrder({
     required this.id,
     required this.customerId,
@@ -273,6 +277,8 @@ class BakeryOrder {
     this.nearNotified = false,
     this.movedFromDate,
     this.movedFromSlot,
+    this.slotMinutes = 60,
+    this.movedFromMinutes = 60,
   });
 
   bool get wasMoved => movedFromDate != null;
@@ -313,6 +319,8 @@ class BakeryOrder {
         nearNotified: m['nearNotified'] as bool? ?? false,
         movedFromDate: (m['movedFrom'] as Map?)?['date'] as String?,
         movedFromSlot: (m['movedFrom'] as Map?)?['slot'] as String?,
+        slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
+        movedFromMinutes: ((m['movedFrom'] as Map?)?['slotMinutes'] as num?)?.toInt() ?? 60,
       );
 
   /// Datos que escribe el cliente al crear el pedido.

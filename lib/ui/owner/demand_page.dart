@@ -48,6 +48,7 @@ class DemandPage extends StatelessWidget {
                       date,
                       orders,
                       slotOrder: days.where((d) => d.date == date).firstOrNull?.slots ?? const [],
+                      slotMinutes: days.where((d) => d.date == date).firstOrNull?.slotMinutes ?? 60,
                     ),
                   ),
                 ),
@@ -372,8 +373,8 @@ class SlotDemandTable extends StatelessWidget {
   }
 
   /// "10:00" de "10:00 a 11:00".
-  static String _start(String slot) {
-    final full = slotLabel(slot);
+  String _start(String slot) {
+    final full = slotLabel(slot, minutes: demand.slotMinutes);
     final cut = full.indexOf(' a ');
     return cut < 0 ? full : full.substring(0, cut);
   }
@@ -381,7 +382,7 @@ class SlotDemandTable extends StatelessWidget {
   /// "10:00" grande y "a 11:00" chiquito abajo, para que quepa en poco ancho.
   Widget _slotLabel(String slot) {
     final start = _start(slot);
-    final rest = slotLabel(slot).substring(start.length).trim();
+    final rest = slotLabel(slot, minutes: demand.slotMinutes).substring(start.length).trim();
     return Padding(
       padding: const EdgeInsets.only(left: 6),
       child: FittedBox(
