@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../logic/archive.dart';
 import '../../logic/day_route.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
@@ -13,13 +14,15 @@ import '../status_chip.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'day_route_map.dart';
+import 'history_page.dart';
 import 'route_editor_page.dart';
 
 /// Pedidos en vivo, agrupados por día y horario.
 /// Cada día va en orden de ruta: la que acomodaste a mano, o si no, la más corta
 /// respetando horarios. Al final está el mapa del día con las casas numeradas
 /// y el botón para cambiar el orden.
-/// Hasta abajo, plegados: los cancelados y los de días que ya pasaron.
+/// Hasta abajo: los cancelados (plegados) y el botón del Historial, donde se
+/// archivan los días ya repartidos (ver logic/archive.dart) con lo vendido.
 /// Con "Seleccionar varios" se pueden borrar muchos de un jalón (por ejemplo, los de prueba).
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
@@ -57,6 +60,7 @@ class _OrdersPageState extends State<OrdersPage> {
           context,
           cfgSnap.data ?? const AppConfig(),
           {for (final d in daysSnap.data ?? const <DeliveryDay>[]) d.date: d},
+          daysLoaded: daysSnap.hasData,
         ),
       ),
     );
@@ -122,12 +126,15 @@ class _OrdersPageState extends State<OrdersPage> {
     }
   }
 
-  Widget _orders(BuildContext context, AppConfig cfg, Map<String, DeliveryDay> days) {
+  void _openHistory() => Navigator.of(context)
+      .push(MaterialPageRoute<void>(builder: (_) => const HistoryPage()));
+
+  Widget _orders(BuildContext context, AppConfig cfg, Map<String, DeliveryDay> days, {required bool daysLoaded}) {
     final base = basePoint(cfg);
     final now = DateTime.now();
     final today = dateKey(now);
-    // También trae los de las últimas semanas, para poder borrar pedidos de prueba viejos.
-    final since = dateKey(DateTime(now.year, now.month, now.day - 30));
+    // También trae los de la última semana, para el botón del Historial.
+    final since = dateKey(DateTime(now.year, now.month, now.day - 7));
     return StreamBuilder<List<BakeryOrder>>(
       stream: Repo.instance.ordersFrom(since),
       builder: (context, snap) {
@@ -135,24 +142,38 @@ class _OrdersPageState extends State<OrdersPage> {
           return EmptyState(title: 'No cargaron los pedidos', message: '${snap.error}');
         }
         if (!snap.hasData) return const SkeletonList(count: 3);
-        final all = snap.data!;
+        final fetched = snap.data!;
+        // Días ya repartidos (o que ya pasaron): sus pedidos se van al Historial.
+        final finished = finishedDates(fetched, today: today, days: days, daysLoaded: daysLoaded);
+        final archived = fetched.where((o) => finished.contains(o.deliveryDate)).toList();
         final orders = _routed(
-          all
-              .where((o) => o.status != OrderStatus.cancelado && o.deliveryDate.compareTo(today) >= 0)
+          fetched
+              .where((o) =>
+                  o.status != OrderStatus.cancelado &&
+                  o.deliveryDate.compareTo(today) >= 0 &&
+                  !finished.contains(o.deliveryDate))
               .toList(),
           cfg,
           days,
         );
-        final cancelled = all.where((o) => o.status == OrderStatus.cancelado).toList()
-          ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
-        final past = all
-            .where((o) => o.status != OrderStatus.cancelado && o.deliveryDate.compareTo(today) < 0)
+        final cancelled = fetched
+            .where((o) => o.status == OrderStatus.cancelado && o.deliveryDate.compareTo(today) >= 0)
             .toList()
           ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
-        if (orders.isEmpty && cancelled.isEmpty && past.isEmpty) {
-          return const EmptyState(
-            title: 'Todo tranquilo por aquí',
-            message: 'No hay pedidos pendientes. Cuando llegue uno, aparece aquí al momento.',
+        // Lo que se puede palomear para borrar: solo lo que se ve aquí.
+        final all = [...orders, ...cancelled];
+        final todayDone = finished.contains(today);
+        if (orders.isEmpty && cancelled.isEmpty) {
+          return EmptyState(
+            title: todayDone ? '¡Listo, todo entregado! 🎉' : 'Todo tranquilo por aquí',
+            message: todayDone
+                ? 'Los pedidos de hoy ya se guardaron en el Historial, con lo que vendiste.'
+                : 'No hay pedidos pendientes. Cuando llegue uno, aparece aquí al momento.',
+            action: OutlinedButton.icon(
+              onPressed: _openHistory,
+              icon: const Icon(Icons.inventory_2_rounded),
+              label: const Text('Ver Historial'),
+            ),
           );
         }
         final selected = _selected ?? const <String>{};
@@ -262,16 +283,8 @@ class _OrdersPageState extends State<OrdersPage> {
             onToggle: _toggle,
           ));
         }
-        if (past.isNotEmpty) {
-          children.add(_FoldedSection(
-            icon: Icons.history_rounded,
-            title: 'Días que ya pasaron (${past.length})',
-            subtitle: 'Pedidos de las últimas semanas',
-            orders: past,
-            selecting: _selecting,
-            selected: selected,
-            onToggle: _toggle,
-          ));
+        if (!_selecting) {
+          children.add(_HistoryLink(recent: archived, onTap: _openHistory));
         }
         return Column(
           children: [
@@ -644,7 +657,7 @@ class _OrderCard extends StatelessWidget {
                                     style: TextButton.styleFrom(foregroundColor: Pan.terracota),
                                     child: const Text('Cancelar'),
                                   ),
-                                _DeleteOrderButton(order: o),
+                                DeleteOrderButton(order: o),
                               ],
                             ),
                           ),
@@ -735,9 +748,9 @@ Future<void> confirmDeleteOrder(BuildContext context, BakeryOrder o) async {
   }
 }
 
-class _DeleteOrderButton extends StatelessWidget {
+class DeleteOrderButton extends StatelessWidget {
   final BakeryOrder order;
-  const _DeleteOrderButton({required this.order});
+  const DeleteOrderButton({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) => IconButton(
@@ -747,7 +760,7 @@ class _DeleteOrderButton extends StatelessWidget {
       );
 }
 
-/// Pedidos plegados al final de la lista (cancelados, o de días que ya pasaron).
+/// Pedidos plegados al final de la lista (los cancelados).
 class _FoldedSection extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -803,10 +816,53 @@ class _FoldedSection extends StatelessWidget {
                           padding: const EdgeInsets.only(right: 8),
                           child: _Check(selected: selected.contains(o.id)),
                         )
-                      : _DeleteOrderButton(order: o),
+                      : DeleteOrderButton(order: o),
                 ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Al final de la lista: abre el Historial con los días ya repartidos.
+class _HistoryLink extends StatelessWidget {
+  /// Pedidos archivados de la última semana (para el resumen de la tarjeta).
+  final List<BakeryOrder> recent;
+  final VoidCallback onTap;
+  const _HistoryLink({required this.recent, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = SalesSummary.of(recent);
+    final subtitle = s.delivered == 0
+        ? 'Días ya repartidos, con lo que vendiste'
+        : 'Esta semana: ${s.delivered} ${s.delivered == 1 ? 'pedido entregado' : 'pedidos entregados'}'
+            ' · ${money(s.sold)}';
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: PanCard(
+        color: Pan.harina,
+        onTap: onTap,
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+        child: Row(
+          children: [
+            const Icon(Icons.inventory_2_rounded, color: Pan.canela),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Historial', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: theme.textTheme.bodySmall),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: Pan.canela),
+          ],
         ),
       ),
     );
