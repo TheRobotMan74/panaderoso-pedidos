@@ -9,7 +9,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../models.dart';
 
 /// Acceso a los datos en Firebase. Colecciones:
-/// users, products, deliveryDays, dayStock, orders, config/app, tracking/current.
+/// users, products, deliveryDays, dayStock, orders, config/app, tracking/current,
+/// reviews (una por pedido) y suggestions (ideas de pan nuevo).
 class Repo {
   Repo._();
   static final instance = Repo._();
@@ -265,6 +266,115 @@ class Repo {
 
   List<BakeryOrder> _toOrders(QuerySnapshot<Map<String, dynamic>> s) =>
       s.docs.map((d) => BakeryOrder.fromMap(d.id, d.data())).toList();
+
+  // ---------- Reseñas ----------
+
+  CollectionReference<Map<String, dynamic>> get _reviews => _db.collection('reviews');
+
+  List<Review> _toReviews(QuerySnapshot<Map<String, dynamic>> s) =>
+      s.docs.map((d) => Review.fromMap(d.id, d.data())).toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(2100)).compareTo(a.createdAt ?? DateTime(2100)));
+
+  /// Las reseñas que ha hecho el cliente.
+  Stream<List<Review>> myReviews(String uid) =>
+      _reviews.where('customerId', isEqualTo: uid).snapshots().map(_toReviews);
+
+  /// Todas las reseñas, la más nueva primero. Solo el dueño.
+  Stream<List<Review>> allReviews() => _reviews.snapshots().map(_toReviews);
+
+  /// Las que el dueño escogió para que las vean todos los clientes.
+  Stream<List<Review>> featuredReviews() =>
+      _reviews.where('featured', isEqualTo: true).snapshots().map(_toReviews);
+
+  /// Guarda la reseña del cliente. Si ya había una de ese pedido, se cambia
+  /// (y le vuelve a salir como nueva al dueño).
+  Future<void> saveReview(Review r, {required bool isNew}) {
+    final doc = _reviews.doc(r.orderId);
+    if (isNew) {
+      return doc.set({...r.toCustomerMap(), 'createdAt': FieldValue.serverTimestamp()});
+    }
+    return doc.update({
+      'rating': r.rating,
+      'comment': r.comment,
+      'photoPath': r.photoPath,
+      'seen': false,
+      'featured': false,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<String> uploadReviewPhoto(String uid, Uint8List bytes) async {
+    final path = 'review-photos/$uid/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    await _storage.ref(path).putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+    return path;
+  }
+
+  final _photoUrls = <String, Future<String>>{};
+
+  /// Enlace de la foto (se recuerda, para no pedirlo cada vez que se dibuja).
+  Future<String> reviewPhotoUrl(String path) => _photoUrls.putIfAbsent(path, () {
+        final f = _storage.ref(path).getDownloadURL();
+        f.catchError((Object _) {
+          _photoUrls.remove(path);
+          return '';
+        });
+        return f;
+      });
+
+  /// El cliente no quiere calificar este pedido: ya no se le pregunta en el inicio.
+  Future<void> skipReview(String uid, String orderId) =>
+      _db.collection('users').doc(uid).set({'reviewSkipped': orderId}, SetOptions(merge: true));
+
+  /// Solo el dueño: mostrarla o no a los clientes.
+  Future<void> setReviewFeatured(String orderId, bool featured) =>
+      _reviews.doc(orderId).update({'featured': featured});
+
+  Future<void> deleteReview(String orderId) => _reviews.doc(orderId).delete();
+
+  // ---------- Ideas de pan ----------
+
+  CollectionReference<Map<String, dynamic>> get _suggestions => _db.collection('suggestions');
+
+  List<Suggestion> _toSuggestions(QuerySnapshot<Map<String, dynamic>> s) =>
+      s.docs.map((d) => Suggestion.fromMap(d.id, d.data())).toList()
+        ..sort((a, b) => (b.createdAt ?? DateTime(2100)).compareTo(a.createdAt ?? DateTime(2100)));
+
+  Future<void> sendSuggestion({required String uid, required String name, required String text}) =>
+      _suggestions.add({
+        'customerId': uid,
+        'customerName': name,
+        'text': text,
+        'seen': false,
+        'liked': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+  Stream<List<Suggestion>> mySuggestions(String uid) =>
+      _suggestions.where('customerId', isEqualTo: uid).snapshots().map(_toSuggestions);
+
+  /// Todas las ideas, la más nueva primero. Solo el dueño.
+  Stream<List<Suggestion>> allSuggestions() => _suggestions.snapshots().map(_toSuggestions);
+
+  /// Solo el dueño: "Me gusta la idea" (el cliente lo ve en su app).
+  Future<void> setSuggestionLiked(String id, bool liked) =>
+      _suggestions.doc(id).update({'liked': liked});
+
+  Future<void> deleteSuggestion(String id) => _suggestions.doc(id).delete();
+
+  /// El dueño ya vio estas reseñas e ideas: se quita el numerito del panel.
+  Future<void> markFeedbackSeen({List<String> reviews = const [], List<String> suggestions = const []}) async {
+    final refs = [
+      for (final id in reviews) _reviews.doc(id),
+      for (final id in suggestions) _suggestions.doc(id),
+    ];
+    for (var i = 0; i < refs.length; i += 400) {
+      final batch = _db.batch();
+      for (final ref in refs.skip(i).take(400)) {
+        batch.update(ref, {'seen': true});
+      }
+      await batch.commit();
+    }
+  }
 
   // ---------- Reparto en vivo ----------
 

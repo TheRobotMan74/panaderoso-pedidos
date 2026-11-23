@@ -18,6 +18,10 @@ class AppUser {
   final double? lat;
   final double? lng;
 
+  /// Último pedido al que dijo "Ahora no" en la invitación a calificar
+  /// (para no volver a preguntarle por ese mismo pedido).
+  final String? reviewSkipped;
+
   const AppUser({
     required this.uid,
     required this.name,
@@ -27,6 +31,7 @@ class AppUser {
     this.role = Role.cliente,
     this.lat,
     this.lng,
+    this.reviewSkipped,
   });
 
   bool get hasLocation => lat != null && lng != null;
@@ -40,6 +45,7 @@ class AppUser {
         role: roleFromString(m['role'] as String?),
         lat: (m['lat'] as num?)?.toDouble(),
         lng: (m['lng'] as num?)?.toDouble(),
+        reviewSkipped: m['reviewSkipped'] as String?,
       );
 
   /// El rol no se escribe desde la app: solo se cambia en la consola de Firebase.
@@ -474,6 +480,105 @@ class TrackingInfo {
         date: m?['date'] as String? ?? '',
         viewers: List<String>.from(m?['viewers'] as List? ?? const []),
         ahead: _intMap(m?['ahead']),
+      );
+}
+
+/// Reseña de un pedido entregado. Una por pedido: el id del documento es el del pedido.
+class Review {
+  final String orderId;
+  final String customerId;
+  final String customerName;
+
+  /// De 1 a 5 estrellas.
+  final int rating;
+  final String comment;
+
+  /// Foto del pan en Storage (`review-photos/<uid>/...`). Null = sin foto.
+  final String? photoPath;
+
+  /// Lo que pidió, para que el dueño sepa de qué habla ("2 × Chocolatín").
+  final List<String> items;
+  final String deliveryDate;
+  final DateTime? createdAt;
+
+  /// Ya la vio el dueño (para el numerito del panel).
+  final bool seen;
+
+  /// El dueño la escogió para que la vean los demás clientes.
+  final bool featured;
+
+  const Review({
+    required this.orderId,
+    required this.customerId,
+    required this.customerName,
+    required this.rating,
+    this.comment = '',
+    this.photoPath,
+    this.items = const [],
+    this.deliveryDate = '',
+    this.createdAt,
+    this.seen = false,
+    this.featured = false,
+  });
+
+  factory Review.fromMap(String id, Map<String, dynamic> m) => Review(
+        orderId: id,
+        customerId: m['customerId'] as String? ?? '',
+        customerName: m['customerName'] as String? ?? '',
+        rating: ((m['rating'] as num?)?.toInt() ?? 5).clamp(1, 5),
+        comment: m['comment'] as String? ?? '',
+        photoPath: m['photoPath'] as String?,
+        items: List<String>.from(m['items'] as List? ?? const []),
+        deliveryDate: m['deliveryDate'] as String? ?? '',
+        createdAt: _toDate(m['createdAt']),
+        seen: m['seen'] as bool? ?? false,
+        featured: m['featured'] as bool? ?? false,
+      );
+
+  /// Lo que escribe el cliente. [createdAt] lo pone el servidor.
+  Map<String, dynamic> toCustomerMap() => {
+        'customerId': customerId,
+        'customerName': customerName,
+        'rating': rating,
+        'comment': comment,
+        'photoPath': photoPath,
+        'items': items,
+        'deliveryDate': deliveryDate,
+        'seen': false,
+        'featured': false,
+      };
+}
+
+/// Idea de pan nuevo que manda un cliente.
+class Suggestion {
+  final String id;
+  final String customerId;
+  final String customerName;
+  final String text;
+  final DateTime? createdAt;
+  final bool seen;
+
+  /// El dueño le dio "Me gusta la idea": el cliente lo ve en su app.
+  final bool liked;
+
+  const Suggestion({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.text,
+    this.createdAt,
+    this.seen = false,
+    this.liked = false,
+  });
+
+  factory Suggestion.fromMap(String id, Map<String, dynamic> m) => Suggestion(
+        id: id,
+        customerId: m['customerId'] as String? ?? '',
+        customerName: m['customerName'] as String? ?? '',
+        text: m['text'] as String? ?? '',
+        createdAt: _toDate(m['createdAt']),
+        seen: m['seen'] as bool? ?? false,
+        liked: m['liked'] as bool? ?? false,
       );
 }
 

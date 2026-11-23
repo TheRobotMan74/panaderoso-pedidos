@@ -8,6 +8,7 @@ import '../../logic/stock.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../../web/web_app_banner.dart';
+import '../feedback_widgets.dart';
 import '../format.dart';
 import '../product_image.dart';
 import '../promo_widgets.dart';
@@ -53,6 +54,8 @@ class _CustomerHomeState extends State<CustomerHome> {
           builder: (_) => ProfilePage(uid: widget.user.uid, existing: widget.user, editing: true),
         ),
       );
+    } else if (v == 'idea') {
+      showSuggestSheet(context, widget.user);
     } else if (v == 'salir') {
       FirebaseAuth.instance.signOut();
     }
@@ -79,6 +82,14 @@ class _CustomerHomeState extends State<CustomerHome> {
             offset: const Offset(0, 52),
             onSelected: _openMenu,
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'idea',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.lightbulb_rounded),
+                  title: Text('Sugerir un pan'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'perfil',
                 child: ListTile(
@@ -287,9 +298,19 @@ class _Catalog extends StatelessWidget {
           listenable: cart,
           builder: (context, _) => ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
-            itemCount: products.length + 1,
+            itemCount: products.length + 2,
             itemBuilder: (context, i) {
-              if (i == 0) return FadeSlideIn(child: _Welcome(name: first, uid: user.uid));
+              if (i == 0) return FadeSlideIn(child: _Welcome(name: first, user: user));
+              if (i == products.length + 1) {
+                // Al final del menú: reseñas escogidas por el dueño y "Sugiere un pan".
+                return FadeSlideIn(
+                  index: i,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [const FeaturedReviews(), SuggestBreadCard(user: user)],
+                  ),
+                );
+              }
               final p = products[i - 1];
               return FadeSlideIn(
                 index: i,
@@ -306,8 +327,8 @@ class _Catalog extends StatelessWidget {
 /// Saludo y banner de miel arriba del catálogo.
 class _Welcome extends StatelessWidget {
   final String name;
-  final String uid;
-  const _Welcome({required this.name, required this.uid});
+  final AppUser user;
+  const _Welcome({required this.name, required this.user});
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +386,8 @@ class _Welcome extends StatelessWidget {
               ],
             ),
           ),
-          LoyaltyCardView(uid: uid),
+          ReviewPrompt(user: user),
+          LoyaltyCardView(uid: user.uid),
           const _NextDayStock(),
           const SizedBox(height: 6),
           const SectionTitle('Nuestro pan'),

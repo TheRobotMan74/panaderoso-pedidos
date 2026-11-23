@@ -51,6 +51,72 @@ service cloud.firestore {
       allow write: if isOwner();
     }
 
+    // Reseñas: una por pedido (el id del documento es el del pedido).
+    // El cliente califica sus propios pedidos que no se cancelaron.
+    // Las ve él, el dueño, y todos los clientes si el dueño la escogió para mostrar.
+    match /reviews/{orderId} {
+      allow read: if isOwner()
+        || (signedIn() && resource.data.customerId == request.auth.uid)
+        || (signedIn() && resource.data.featured == true);
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['customerId', 'customerName', 'rating', 'comment',
+             'photoPath', 'items', 'deliveryDate', 'seen', 'featured', 'createdAt'])
+        && request.resource.data.customerId == request.auth.uid
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.customerId == request.auth.uid
+        && get(/databases/$(database)/documents/orders/$(orderId)).data.status != 'cancelado'
+        && validReview(request.resource.data)
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() <= 120
+        && request.resource.data.items is list
+        && request.resource.data.items.size() <= 30
+        && request.resource.data.seen == false
+        && request.resource.data.featured == false
+        && request.resource.data.createdAt == request.time;
+
+      // El cliente puede cambiar su reseña; vuelve a salir como nueva y sin mostrar.
+      allow update: if (signedIn()
+          && resource.data.customerId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['rating', 'comment', 'photoPath', 'seen', 'featured', 'updatedAt'])
+          && validReview(request.resource.data)
+          && request.resource.data.seen == false
+          && request.resource.data.featured == false
+          && request.resource.data.updatedAt == request.time)
+        // El dueño solo la marca vista o la escoge para mostrar.
+        || (isOwner()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen', 'featured']));
+
+      allow delete: if isOwner();
+    }
+
+    function validReview(d) {
+      return d.rating is int && d.rating >= 1 && d.rating <= 5
+        && d.comment is string && d.comment.size() <= 600
+        && (d.photoPath == null
+            || (d.photoPath is string && d.photoPath.matches('review-photos/' + request.auth.uid + '/.*')));
+    }
+
+    // Ideas de pan nuevo que mandan los clientes.
+    match /suggestions/{id} {
+      allow read: if isOwner() || (signedIn() && resource.data.customerId == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['customerId', 'customerName', 'text', 'seen', 'liked', 'createdAt'])
+        && request.resource.data.customerId == request.auth.uid
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() <= 120
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 300
+        && request.resource.data.seen == false
+        && request.resource.data.liked == false
+        && request.resource.data.createdAt == request.time;
+      // El dueño la marca vista o le da "Me gusta la idea".
+      allow update: if isOwner()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen', 'liked']);
+      allow delete: if isOwner();
+    }
+
     match /orders/{id} {
       allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isOwner());
 
