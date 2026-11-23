@@ -137,3 +137,61 @@ GiftPreview previewGifts({
 /// true si el cliente todavía no tiene ningún pedido (sin contar cancelados).
 bool isFirstOrder(List<BakeryOrder> myOrders) =>
     myOrders.every((o) => o.status == OrderStatus.cancelado);
+
+/// Tarjeta de un cliente vista desde el panel del dueño.
+class CustomerLoyalty {
+  final String customerId;
+  final String name;
+  final String phone;
+  final LoyaltyCard card;
+
+  /// Pedidos que no se cancelaron (de antes y después de la promoción).
+  final int orders;
+
+  /// Ya recibió el pan de bienvenida (en un pedido no cancelado).
+  final bool welcomeUsed;
+
+  /// Panes de lealtad que ya se le dieron.
+  int get loyaltyGiven => card.given;
+
+  const CustomerLoyalty({
+    required this.customerId,
+    required this.name,
+    required this.phone,
+    required this.card,
+    required this.orders,
+    required this.welcomeUsed,
+  });
+}
+
+/// Junta los pedidos por cliente. Los que van más cerca del siguiente pan, primero.
+List<CustomerLoyalty> customersLoyalty(Iterable<BakeryOrder> allOrders, int goal) {
+  final byCustomer = <String, List<BakeryOrder>>{};
+  for (final o in allOrders) {
+    if (o.customerId.isEmpty) continue;
+    byCustomer.putIfAbsent(o.customerId, () => []).add(o);
+  }
+  final list = <CustomerLoyalty>[];
+  for (final e in byCustomer.entries) {
+    final os = e.value;
+    // El nombre y teléfono del pedido más nuevo.
+    os.sort((a, b) => (b.createdAt ?? DateTime(2000)).compareTo(a.createdAt ?? DateTime(2000)));
+    final active = os.where((o) => o.status != OrderStatus.cancelado).toList();
+    list.add(CustomerLoyalty(
+      customerId: e.key,
+      name: os.first.customerName,
+      phone: os.first.phone,
+      card: LoyaltyCard.from(os),
+      orders: active.length,
+      welcomeUsed: active.any((o) => o.giftCount(giftWelcome) > 0),
+    ));
+  }
+  int key(CustomerLoyalty c) => c.card.pending(goal) > 0 ? goal : c.card.progress(goal);
+  list.sort((a, b) {
+    final k = key(b).compareTo(key(a));
+    if (k != 0) return k;
+    final p = b.card.pieces.compareTo(a.card.pieces);
+    return p != 0 ? p : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+  return list;
+}

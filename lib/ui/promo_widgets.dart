@@ -107,7 +107,7 @@ class LoyaltyCardView extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              _Dots(done: done, goal: goal),
+              LoyaltyDots(done: done, goal: goal),
               const SizedBox(height: 8),
               Text(
                 pending > 0
@@ -124,10 +124,10 @@ class LoyaltyCardView extends StatelessWidget {
 }
 
 /// Un puntito por pieza: los llenos son las que ya lleva.
-class _Dots extends StatelessWidget {
+class LoyaltyDots extends StatelessWidget {
   final int done;
   final int goal;
-  const _Dots({required this.done, required this.goal});
+  const LoyaltyDots({super.key, required this.done, required this.goal});
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, c) {
