@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../models.dart';
 import '../services/repo.dart';
 import '../web/map_fallback.dart';
+import 'customer/addresses.dart';
 import 'location_picker_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
@@ -36,6 +37,11 @@ class _ProfilePageState extends State<ProfilePage> {
 
   bool get _isOwner => widget.existing?.role == Role.dueno;
 
+  /// Cliente que ya tiene su dirección: aquí se ven y se cambian todas sus direcciones
+  /// (en el registro se pide solo una, como siempre).
+  bool get _manyAddresses =>
+      widget.editing && !_isOwner && widget.existing != null && widget.existing!.addresses.isNotEmpty;
+
   Future<void> _pickOnMap() async {
     final picked = await Navigator.push<PickedLocation>(
       context,
@@ -52,6 +58,14 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _save() async {
+    if (_manyAddresses) {
+      if (!_form.currentState!.validate()) return;
+      setState(() => _busy = true);
+      await Repo.instance.saveNameAndPhone(widget.uid, _name.text.trim(), _phone.text.trim());
+      if (!mounted) return;
+      Navigator.pop(context);
+      return;
+    }
     final formOk = _form.currentState!.validate();
     // El dueño no necesita marcar casa; los clientes sí.
     final pinOk = _isOwner || _lat != null;
@@ -124,8 +138,12 @@ class _ProfilePageState extends State<ProfilePage> {
               decoration: const InputDecoration(
                   labelText: 'Teléfono (WhatsApp)', prefixIcon: Icon(Icons.phone_iphone_rounded)),
             ),
+            if (_manyAddresses) ...[
+              const SectionTitle('Mis direcciones'),
+              AddressesSection(uid: widget.uid),
+            ] else ...[
             const SectionTitle('Tu casa en el mapa'),
-            _MapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
+            HomeMapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
             const SizedBox(height: 12),
             TextFormField(
               controller: _address,
@@ -146,6 +164,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 prefixIcon: Icon(Icons.sticky_note_2_outlined),
               ),
             ),
+            ],
             const SizedBox(height: 24),
             HoneyButton(
               label: 'Guardar',
@@ -161,12 +180,20 @@ class _ProfilePageState extends State<ProfilePage> {
 }
 
 /// Cuadrito con el mapa de la casa, o el botón para marcarla.
-class _MapPreview extends StatelessWidget {
+class HomeMapPreview extends StatelessWidget {
   final double? lat;
   final double? lng;
   final VoidCallback onTap;
   final bool error;
-  const _MapPreview({required this.lat, required this.lng, required this.onTap, required this.error});
+  final String emptyLabel;
+  const HomeMapPreview({
+    super.key,
+    required this.lat,
+    required this.lng,
+    required this.onTap,
+    required this.error,
+    this.emptyLabel = 'Marcar mi casa en el mapa',
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -188,9 +215,8 @@ class _MapPreview extends StatelessWidget {
                   child: const Icon(Icons.location_on_rounded, color: Pan.cacao),
                 ),
                 const SizedBox(width: 14),
-                const Expanded(
-                  child: Text('Marcar mi casa en el mapa',
-                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                Expanded(
+                  child: Text(emptyLabel, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
                 ),
                 const Icon(Icons.chevron_right_rounded, color: Pan.caramelo),
               ],
@@ -199,7 +225,7 @@ class _MapPreview extends StatelessWidget {
           if (error)
             Padding(
               padding: const EdgeInsets.only(top: 6, left: 12),
-              child: Text('Marca tu casa para que el repartidor llegue directo',
+              child: Text('Marca el lugar para que el repartidor llegue directo',
                   style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
             ),
         ],

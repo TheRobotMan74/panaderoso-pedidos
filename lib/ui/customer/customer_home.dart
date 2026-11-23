@@ -97,7 +97,7 @@ class _CustomerHomeState extends State<CustomerHome> {
                 child: ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.home_rounded),
-                  title: Text('Mis datos de entrega'),
+                  title: Text('Mis datos y direcciones'),
                 ),
               ),
               PopupMenuItem(

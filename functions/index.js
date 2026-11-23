@@ -20,7 +20,7 @@ initializeApp();
 // o fallan. Para una panadería, 10 alcanza de sobra (cada copia atiende muchas a la vez).
 setGlobalOptions({ maxInstances: 10 });
 
-// App Check en las funciones que llama la app (hacerPedido, moverDia, mandarRecuperacion).
+// App Check en las funciones que llama la app (hacerPedido, cambiarDireccion, moverDia, mandarRecuperacion).
 // Fase 1 y 2 (monitoreo): false. Se aceptan todas, pero cada llamada deja en el registro
 // si traía el "pase" de la app original o no (busca "appcheck" en los registros).
 // Fase 3: true, cuando casi todos tengan la APK nueva. Sin pase válido, se rechaza.
@@ -264,9 +264,13 @@ async function domicilioYaRegalado(db, uid, lat, lng, direccion) {
   return otros.docs.some((d) => {
     if (d.id === uid) return false;
     const b = d.get('bienvenida') || {};
-    if (limpia.length >= 8 && b.direccion === limpia) return true;
-    return lat !== null && lng !== null && typeof b.lat === 'number' && typeof b.lng === 'number'
-      && distanciaMetros(lat, lng, b.lat, b.lng) < MISMO_DOMICILIO_METROS;
+    // Si el cliente cambió la dirección del pedido con regalo, también cuentan las otras.
+    const lugares = [b, ...(Array.isArray(b.otras) ? b.otras : [])];
+    return lugares.some((l) => {
+      if (limpia.length >= 8 && l.direccion === limpia) return true;
+      return lat !== null && lng !== null && typeof l.lat === 'number' && typeof l.lng === 'number'
+        && distanciaMetros(lat, lng, l.lat, l.lng) < MISMO_DOMICILIO_METROS;
+    });
   });
 }
 
@@ -474,6 +478,98 @@ exports.liberarBienvenida = onDocumentUpdated('orders/{id}', async (event) => {
       tx.update(ref, { 'bienvenida.activa': false });
     }
   });
+});
+
+// El cliente cambia a qué dirección se entrega un pedido que todavía no sale
+// (de sus direcciones guardadas). Se vuelve a calcular el envío con la nueva.
+exports.cambiarDireccion = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('cambiarDireccion', req);
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Inicia sesión para cambiar tu pedido.');
+  const d = req.data || {};
+  if (typeof d.orderId !== 'string' || !d.orderId || d.orderId.includes('/')) {
+    throw new HttpsError('invalid-argument', 'Falta el pedido.');
+  }
+  const lat = numeroONull(d.lat);
+  const lng = numeroONull(d.lng);
+  const direccion = texto(d.address, 300);
+  if (!direccion || lat === null || lng === null) {
+    throw new HttpsError('invalid-argument', 'Marca la dirección en el mapa.');
+  }
+
+  const db = getFirestore();
+  const orderRef = db.collection('orders').doc(d.orderId);
+  const config = (await db.collection('config').doc('app').get()).data() || {};
+  const promoRef = db.collection('promoClientes').doc(uid);
+  // Se revisa antes de la transacción (es una consulta de muchos documentos).
+  const domicilioUsado = await domicilioYaRegalado(db, uid, lat, lng, direccion);
+  let aviso = null;
+
+  const shippingFee = await db.runTransaction(async (tx) => {
+    const order = await tx.get(orderRef);
+    if (!order.exists || order.get('customerId') !== uid) {
+      throw new HttpsError('permission-denied', 'No encontramos ese pedido.');
+    }
+    const o = order.data();
+    if (!['recibido', 'confirmado'].includes(o.status)) {
+      throw new HttpsError('failed-precondition', 'Ese pedido ya salió o ya no está activo. Escríbenos por WhatsApp.');
+    }
+    const day = await tx.get(db.collection('deliveryDays').doc(o.deliveryDate));
+    if (day.exists && day.get('closed') === true) {
+      throw new HttpsError('failed-precondition', 'Ya salimos a repartir ese día. Escríbenos por WhatsApp.');
+    }
+    const [y, m, dd] = String(o.deliveryDate).split('-').map(Number);
+    if (Date.now() >= Date.UTC(y, m - 1, dd) + 30 * 3600 * 1000) {
+      throw new HttpsError('failed-precondition', 'Ese día ya pasó.');
+    }
+
+    // El pan de bienvenida es uno por domicilio: no se puede mover a uno que ya lo tuvo.
+    const items = Array.isArray(o.items) ? o.items : [];
+    const traeBienvenida = items.some((it) => it.regalo === 'bienvenida');
+    if (traeBienvenida && domicilioUsado) {
+      throw new HttpsError('failed-precondition',
+        'Este pedido trae pan de bienvenida y esa dirección ya lo recibió. Elige otra o escríbenos.');
+    }
+    const promo = traeBienvenida ? await tx.get(promoRef) : null;
+
+    const pagadas = typeof o.lealtadPiezas === 'number' ? o.lealtadPiezas
+      : items.filter((it) => !it.regalo).reduce((s, it) => s + (Number(it.qty) || 0), 0);
+    const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
+    const fee = costoEnvio(config, lat, lng, pagadas);
+
+    if (promo && promo.exists && promo.get('bienvenida.orderId') === orderRef.id) {
+      // La nueva dirección también queda como "ya recibió bienvenida".
+      tx.update(promoRef, {
+        'bienvenida.otras': FieldValue.arrayUnion({ direccion: direccionLimpia(direccion), lat, lng }),
+      });
+    }
+    tx.update(orderRef, {
+      address: direccion,
+      addressNotes: texto(d.addressNotes, 300),
+      lat,
+      lng,
+      shippingFee: fee,
+      total: subtotal + fee,
+      nearNotified: false,
+      addressChangedAt: FieldValue.serverTimestamp(),
+    });
+    const antes = Number(o.shippingFee) || 0;
+    aviso = {
+      title: `📍 ${o.customerName || 'Un cliente'} cambió la dirección`,
+      body: `Pedido del ${o.deliveryDate} a las ${o.slot}: ${direccion}`
+        + (fee !== antes ? ` · envío $${antes} → $${fee}` : ''),
+    };
+    return fee;
+  });
+
+  if (aviso) {
+    await getMessaging().send({
+      topic: 'dueno',
+      notification: aviso,
+      android: { priority: 'high', notification: { sound: 'default' } },
+    }).catch((e) => logger.warn('aviso cambio de direccion', e));
+  }
+  return { shippingFee };
 });
 
 // Vuelve a contar los panes apartados de un día a partir de sus pedidos

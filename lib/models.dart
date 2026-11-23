@@ -32,9 +32,29 @@ class AppUser {
     this.lat,
     this.lng,
     this.reviewSkipped,
+    this.savedAddresses = const [],
   });
 
+  /// Direcciones guardadas (de 1 a [maxAddresses]). La primera es la principal
+  /// y siempre es la misma que address/lat/lng.
+  final List<SavedAddress> savedAddresses;
+
   bool get hasLocation => lat != null && lng != null;
+
+  /// Sus direcciones, la principal primero. Las cuentas de antes (que solo tienen
+  /// una dirección) dan una lista con esa sola.
+  List<SavedAddress> get addresses {
+    final main = SavedAddress(
+      id: savedAddresses.isEmpty ? 'principal' : savedAddresses.first.id,
+      label: savedAddresses.isEmpty ? 'Casa' : savedAddresses.first.label,
+      address: address,
+      notes: addressNotes,
+      lat: lat,
+      lng: lng,
+    );
+    if (address.isEmpty && !hasLocation) return const [];
+    return [main, ...savedAddresses.skip(1)].take(maxAddresses).toList();
+  }
 
   factory AppUser.fromMap(String uid, Map<String, dynamic> m) => AppUser(
         uid: uid,
@@ -46,6 +66,10 @@ class AppUser {
         lat: (m['lat'] as num?)?.toDouble(),
         lng: (m['lng'] as num?)?.toDouble(),
         reviewSkipped: m['reviewSkipped'] as String?,
+        savedAddresses: [
+          for (final a in (m['addresses'] as List? ?? const []))
+            if (a is Map) SavedAddress.fromMap(Map<String, dynamic>.from(a)),
+        ],
       );
 
   /// El rol no se escribe desde la app: solo se cambia en la consola de Firebase.
@@ -54,6 +78,55 @@ class AppUser {
         'phone': phone,
         'address': address,
         'addressNotes': addressNotes,
+        'lat': lat,
+        'lng': lng,
+      };
+}
+
+/// Hasta cuántas direcciones puede guardar un cliente.
+const maxAddresses = 3;
+
+/// Una dirección guardada del cliente ("Casa", "Trabajo"...).
+class SavedAddress {
+  /// Para reconocerla aunque cambie de lugar en la lista.
+  final String id;
+  final String label;
+  final String address;
+  final String notes;
+  final double? lat;
+  final double? lng;
+
+  const SavedAddress({
+    required this.id,
+    required this.label,
+    required this.address,
+    this.notes = '',
+    this.lat,
+    this.lng,
+  });
+
+  bool get hasLocation => lat != null && lng != null;
+
+  /// La misma dirección (mismo punto y mismo texto), para saber cuál usa un pedido.
+  bool sameAs({required String address, double? lat, double? lng}) {
+    bool near(double? a, double? b) => (a == null && b == null) || (a != null && b != null && (a - b).abs() < 1e-6);
+    return this.address.trim() == address.trim() && near(this.lat, lat) && near(this.lng, lng);
+  }
+
+  factory SavedAddress.fromMap(Map<String, dynamic> m) => SavedAddress(
+        id: m['id'] as String? ?? '',
+        label: m['label'] as String? ?? '',
+        address: m['address'] as String? ?? '',
+        notes: m['notes'] as String? ?? '',
+        lat: (m['lat'] as num?)?.toDouble(),
+        lng: (m['lng'] as num?)?.toDouble(),
+      );
+
+  Map<String, dynamic> toMap() => {
+        'id': id,
+        'label': label,
+        'address': address,
+        'notes': notes,
         'lat': lat,
         'lng': lng,
       };
