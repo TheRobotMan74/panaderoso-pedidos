@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../models.dart';
@@ -12,6 +11,7 @@ import 'orders_page.dart';
 import 'products_page.dart';
 import 'send_message_page.dart';
 import 'settings_page.dart';
+import '../../services/push.dart';
 
 /// Pantallas del dueño: pedidos en vivo, demanda, calendario, productos y ajustes.
 class OwnerHome extends StatefulWidget {
@@ -84,7 +84,7 @@ class _OwnerHomeState extends State<OwnerHome> {
           IconButton(
             tooltip: 'Cerrar sesión',
             icon: const Icon(Icons.logout_rounded),
-            onPressed: () => FirebaseAuth.instance.signOut(),
+            onPressed: () => signOutAndForgetPush(),
           ),
           const SizedBox(width: 4),
         ],

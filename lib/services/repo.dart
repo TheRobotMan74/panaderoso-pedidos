@@ -36,6 +36,28 @@ class Repo {
         'fcmTokens': FieldValue.arrayUnion([token]),
       }, SetOptions(merge: true));
 
+  /// Quita el aviso de este celular de la cuenta (al cerrar sesión), para que no
+  /// le sigan llegando a este celular los avisos de la cuenta anterior.
+  Future<void> removeFcmToken(String uid, String token) =>
+      _db.collection('users').doc(uid).update({
+        'fcmTokens': FieldValue.arrayRemove([token]),
+      });
+
+  /// Si el cliente tiene prendidas las notificaciones en su celular
+  /// (el dueño ve en Pedidos a quién no le van a llegar los avisos).
+  Future<void> savePushStatus(String uid, bool enabled) =>
+      _db.collection('users').doc(uid).set({
+        'pushOk': enabled,
+        'pushCheckedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+  /// Clientes que tienen apagadas las notificaciones. Solo el dueño.
+  Stream<Set<String>> customersWithoutPush() => _db
+      .collection('users')
+      .where('pushOk', isEqualTo: false)
+      .snapshots()
+      .map((s) => s.docs.map((d) => d.id).toSet());
+
   /// Manda el correo para cambiar la contraseña. Primero intenta el correo bonito
   /// de Panaderoso (sale del Gmail de la panadería, función "mandarRecuperacion").
   /// Si el servidor no puede, manda el correo normal de Firebase, que también llega en español.
@@ -233,6 +255,13 @@ class Repo {
       .snapshots()
       .map(_toOrders);
 
+  /// Un pedido, en vivo (para el mapa de "¿Dónde va mi pedido?").
+  Stream<BakeryOrder?> order(String id) => _db
+      .collection('orders')
+      .doc(id)
+      .snapshots()
+      .map((d) => d.exists ? BakeryOrder.fromMap(d.id, d.data()!) : null);
+
   /// Todos los pedidos del cliente, para su tarjeta de lealtad.
   Stream<List<BakeryOrder>> myOrdersAll(String uid) => _db
       .collection('orders')
@@ -402,22 +431,31 @@ class Repo {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-  Future<void> updateTrackingPosition(double lat, double lng) => _tracking.update({
+  /// [eta]: minutos estimados para llegar con cada cliente (por uid).
+  Future<void> updateTrackingPosition(double lat, double lng, {Map<String, int>? eta}) =>
+      _tracking.update({
         'lat': lat,
         'lng': lng,
         'updatedAt': FieldValue.serverTimestamp(),
+        'eta': ?eta,
+        if (eta != null) 'etaAt': FieldValue.serverTimestamp(),
       });
 
   Future<void> updateTrackingViewers(List<String> viewers) =>
       _tracking.update({'viewers': viewers});
 
   /// Cuántas entregas faltan antes de la de cada cliente (lo ve en su mapa).
-  Future<void> updateTrackingAhead(Map<String, int> ahead) =>
-      _tracking.update({'ahead': ahead});
+  Future<void> updateTrackingAhead(Map<String, int> ahead, {Map<String, int>? eta}) =>
+      _tracking.update({
+        'ahead': ahead,
+        'eta': ?eta,
+        if (eta != null) 'etaAt': FieldValue.serverTimestamp(),
+      });
 
   /// Termina el reparto y borra la ubicación.
   Future<void> stopTracking() => _tracking.set({
         'active': false,
+        'eta': <String, int>{},
         'viewers': <String>[],
         'lat': null,
         'lng': null,
