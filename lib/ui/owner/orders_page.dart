@@ -646,6 +646,11 @@ class _OrderCard extends StatelessWidget {
                                     onPressed: () => _showProof(context),
                                     child: const Text('Ver captura'),
                                   ),
+                                if (!isCash && o.paymentProofPath == null && !o.paymentVerified)
+                                  OutlinedButton(
+                                    onPressed: () => Repo.instance.updateOrder(o.id, {'paymentVerified': true}),
+                                    child: const Text('Ya me pagó'),
+                                  ),
                                 if (isCash && !o.cashCollected)
                                   OutlinedButton(
                                     onPressed: () => Repo.instance.updateOrder(o.id, {'cashCollected': true}),
