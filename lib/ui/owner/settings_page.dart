@@ -44,6 +44,10 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _nearMeters =
       TextEditingController(text: widget.initial.nearAlertMeters.toString());
   late double? _baseLat = widget.initial.baseLat;
+  late final _etaSpeed = TextEditingController(text: _short(widget.initial.etaSpeedKmh));
+  late final _etaStop = TextEditingController(text: _short(widget.initial.etaStopMinutes));
+
+  static String _short(double v) => v == v.roundToDouble() ? v.toInt().toString() : v.toString();
   late bool _routeReturn = widget.initial.routeReturn;
   late double? _baseLng = widget.initial.baseLng;
   late bool _loyaltyOn = widget.initial.promos.loyaltyEnabled;
@@ -96,6 +100,11 @@ class _SettingsFormState extends State<_SettingsForm> {
       baseLat: _baseLat,
       baseLng: _baseLng,
       routeReturn: _routeReturn,
+      etaSpeedKmh: (double.tryParse(_etaSpeed.text.replaceAll(',', '.')) ?? widget.initial.etaSpeedKmh)
+          .clamp(5, 90),
+      etaStopMinutes:
+          (double.tryParse(_etaStop.text.replaceAll(',', '.')) ?? widget.initial.etaStopMinutes)
+              .clamp(0, 30),
       promos: PromoRules(
         loyaltyEnabled: _loyaltyOn,
         loyaltyGoal: (int.tryParse(_loyaltyGoal.text.trim()) ?? widget.initial.promos.loyaltyGoal)
@@ -204,6 +213,40 @@ class _SettingsFormState extends State<_SettingsForm> {
           onChanged: (v) => setState(() => _routeReturn = v),
           title: const Text('Regreso al punto de salida al terminar'),
           subtitle: const Text('La ruta se arma pensando también en el camino de vuelta'),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Tiempo estimado de llegada: el cliente ve en su mapa en cuántos minutos llegas, '
+          'según dónde vas y las entregas que faltan antes de la suya.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _etaSpeed,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Velocidad promedio',
+                  suffixText: 'km/h',
+                  helperText: 'En ciudad, 20 a 30',
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: TextField(
+                controller: _etaStop,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Tardas en cada entrega',
+                  suffixText: 'min',
+                  helperText: 'Estacionar, entregar, cobrar',
+                ),
+              ),
+            ),
+          ],
         ),
         const Divider(height: 40),
         const SectionTitle('Promociones', padding: EdgeInsets.fromLTRB(4, 4, 4, 4)),

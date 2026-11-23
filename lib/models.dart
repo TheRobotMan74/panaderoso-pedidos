@@ -401,6 +401,11 @@ class AppConfig {
   /// Tarjeta de lealtad y pan de bienvenida.
   final PromoRules promos;
 
+  /// Para el tiempo estimado de llegada que ve el cliente:
+  /// velocidad promedio en la ciudad (km/h) y minutos que tardas en cada entrega.
+  final double etaSpeedKmh;
+  final double etaStopMinutes;
+
   const AppConfig({
     this.bankName = '',
     this.clabe = '',
@@ -412,6 +417,8 @@ class AppConfig {
     this.baseLng,
     this.routeReturn = true,
     this.promos = const PromoRules(),
+    this.etaSpeedKmh = 25,
+    this.etaStopMinutes = 4,
   });
 
   factory AppConfig.fromMap(Map<String, dynamic>? m) => AppConfig(
@@ -427,6 +434,8 @@ class AppConfig {
         routeReturn: m?['routeReturn'] as bool? ?? true,
         promos: PromoRules.fromMap(
             m?['promos'] == null ? null : Map<String, dynamic>.from(m!['promos'] as Map)),
+        etaSpeedKmh: (m?['etaSpeedKmh'] as num?)?.toDouble() ?? 25,
+        etaStopMinutes: (m?['etaStopMinutes'] as num?)?.toDouble() ?? 4,
       );
 
   Map<String, dynamic> toMap() => {
@@ -440,6 +449,8 @@ class AppConfig {
         'baseLng': baseLng,
         'routeReturn': routeReturn,
         'promos': promos.toMap(),
+        'etaSpeedKmh': etaSpeedKmh,
+        'etaStopMinutes': etaStopMinutes,
       };
 }
 
@@ -460,6 +471,11 @@ class TrackingInfo {
   /// orden de la ruta del dueño. 0 = es el siguiente.
   final Map<String, int> ahead;
 
+  /// Minutos estimados para llegar con cada cliente (por uid), calculados en el
+  /// celular del dueño a la hora [etaAt].
+  final Map<String, int> eta;
+  final DateTime? etaAt;
+
   const TrackingInfo({
     this.active = false,
     this.lat,
@@ -468,6 +484,8 @@ class TrackingInfo {
     this.date = '',
     this.viewers = const [],
     this.ahead = const {},
+    this.eta = const {},
+    this.etaAt,
   });
 
   bool get hasPosition => lat != null && lng != null;
@@ -480,6 +498,8 @@ class TrackingInfo {
         date: m?['date'] as String? ?? '',
         viewers: List<String>.from(m?['viewers'] as List? ?? const []),
         ahead: _intMap(m?['ahead']),
+        eta: _intMap(m?['eta']),
+        etaAt: _toDate(m?['etaAt']),
       );
 }
 

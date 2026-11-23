@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -47,15 +49,23 @@ class _OrdersPageState extends State<OrdersPage> {
   late final Stream<List<DeliveryDay>> _days =
       Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
 
+  /// Clientes con las notificaciones apagadas (no les llegan los avisos).
+  Set<String> _noPush = const {};
+  StreamSubscription<Set<String>>? _noPushSub;
+
   @override
   void initState() {
     super.initState();
     FoldMemory.changes.addListener(_refresh);
+    _noPushSub = Repo.instance.customersWithoutPush().listen((ids) {
+      if (mounted) setState(() => _noPush = ids);
+    }, onError: (_) {});
   }
 
   @override
   void dispose() {
     FoldMemory.changes.removeListener(_refresh);
+    _noPushSub?.cancel();
     super.dispose();
   }
 
@@ -312,6 +322,7 @@ class _OrdersPageState extends State<OrdersPage> {
             selecting: _selecting,
             selected: selected.contains(o.id),
             onToggle: () => _toggle(o.id),
+            noPush: o.isPending && _noPush.contains(o.customerId),
           ));
         }
         if (orders.isEmpty) {
@@ -501,6 +512,9 @@ class _OrderCard extends StatelessWidget {
   final bool selected;
   final VoidCallback onToggle;
 
+  /// El cliente tiene apagadas las notificaciones.
+  final bool noPush;
+
   const _OrderCard({
     super.key,
     required this.order,
@@ -509,6 +523,7 @@ class _OrderCard extends StatelessWidget {
     this.selecting = false,
     this.selected = false,
     required this.onToggle,
+    this.noPush = false,
   });
 
   static const _next = {
@@ -622,6 +637,15 @@ class _OrderCard extends StatelessWidget {
                     _line(Icons.sticky_note_2_outlined, o.addressNotes, theme.textTheme.bodySmall!),
                   _line(Icons.phone_outlined, o.phone, theme.textTheme.bodySmall!, selectable: !selecting),
                   if (moved != null) _line(Icons.edit_calendar_rounded, moved, theme.textTheme.bodySmall!),
+                  if (noPush)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        '🔕 Tiene apagadas las notificaciones: no le llegan los avisos. '
+                        'Si hace falta, avísale por WhatsApp.',
+                        style: theme.textTheme.bodySmall!.copyWith(color: Pan.canela),
+                      ),
+                    ),
                   const SizedBox(height: 10),
                   Wrap(
                     spacing: 6,

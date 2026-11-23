@@ -1,8 +1,8 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../ui/theme.dart';
 import '../ui/widgets.dart';
+import '../services/push.dart';
 
 /// Lo que ve el dueño si entra desde la versión web: su panel está en Android.
 class OwnerOnAndroidPage extends StatelessWidget {
@@ -33,7 +33,7 @@ class OwnerOnAndroidPage extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               OutlinedButton.icon(
-                onPressed: () => FirebaseAuth.instance.signOut(),
+                onPressed: () => signOutAndForgetPush(),
                 icon: const Icon(Icons.logout_rounded),
                 label: const Text('Cerrar sesión'),
               ),

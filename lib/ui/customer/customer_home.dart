@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -13,12 +12,14 @@ import '../format.dart';
 import '../product_image.dart';
 import '../promo_widgets.dart';
 import '../profile_page.dart';
+import '../push_reminder.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'checkout_page.dart';
 import 'my_orders_page.dart';
 import 'product_detail_page.dart';
+import '../../services/push.dart';
 
 class CustomerHome extends StatefulWidget {
   final AppUser user;
@@ -57,15 +58,16 @@ class _CustomerHomeState extends State<CustomerHome> {
     } else if (v == 'idea') {
       showSuggestSheet(context, widget.user);
     } else if (v == 'salir') {
-      FirebaseAuth.instance.signOut();
+      signOutAndForgetPush();
     }
   }
 
   /// En la versión web (iPhone) arriba va el aviso para instalarla o activar avisos.
-  /// En Android la pantalla queda igual que siempre.
-  Widget _withWebBanner(Widget body) => kIsWeb
-      ? Column(children: [WebAppBanner(user: widget.user), Expanded(child: body)])
-      : body;
+  /// En Android, si tiene apagadas las notificaciones, el recordatorio para prenderlas.
+  Widget _withWebBanner(Widget body) => Column(children: [
+        kIsWeb ? WebAppBanner(user: widget.user) : const PushReminder(),
+        Expanded(child: body),
+      ]);
 
   @override
   Widget build(BuildContext context) {

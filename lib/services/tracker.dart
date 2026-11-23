@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../logic/day_route.dart';
+import '../logic/eta.dart';
 import '../logic/schedule.dart';
 import '../models.dart';
 import 'repo.dart';
@@ -34,6 +35,11 @@ class DeliveryTracker extends ChangeNotifier {
   AppConfig _cfg = const AppConfig();
   DeliveryDay? _day;
   Map<String, int> _ahead = {};
+
+  // Para el tiempo estimado de llegada de cada cliente.
+  List<BakeryOrder> _route = [];
+  (double, double)? _lastPos;
+  Map<String, int> _eta = {};
 
   /// Se llama cuando el reparto termina solo (ya no quedan pedidos del día).
   void Function(String message)? onAutoStop;
@@ -145,19 +151,36 @@ class DeliveryTracker extends ChangeNotifier {
 
   /// Recalcula, con el orden de la ruta del dueño, cuántas entregas faltan
   /// antes de la de cada cliente, y lo manda solo si cambió.
+  ///
+  /// También recalcula los minutos estimados de llegada con la última ubicación
+  /// (por ejemplo, al marcar un pedido entregado los de atrás se adelantan).
   void _updateAhead() {
     if (_todayOrders.isEmpty) return;
-    final ahead = aheadByCustomer(dayRoute(_todayOrders, _cfg, day: _day));
-    if (mapEquals(ahead, _ahead)) return;
+    _route = dayRoute(_todayOrders, _cfg, day: _day);
+    final ahead = aheadByCustomer(_route);
+    final eta = _computeEta();
+    final aheadChanged = !mapEquals(ahead, _ahead);
+    final etaChanged = eta != null && !mapEquals(eta, _eta);
+    if (!aheadChanged && !etaChanged) return;
     _ahead = ahead;
-    Repo.instance.updateTrackingAhead(ahead).catchError((_) {});
+    if (eta != null) _eta = eta;
+    Repo.instance.updateTrackingAhead(ahead, eta: etaChanged ? eta : null).catchError((_) {});
+  }
+
+  Map<String, int>? _computeEta() {
+    final pos = _lastPos;
+    if (pos == null || _route.isEmpty) return null;
+    return etaForRoute(_route, pos, _cfg);
   }
 
   void _onPosition(Position p) {
     final now = DateTime.now();
     if (now.difference(_lastWrite) < _minWriteGap) return;
     _lastWrite = now;
-    Repo.instance.updateTrackingPosition(p.latitude, p.longitude).catchError((_) {});
+    _lastPos = (p.latitude, p.longitude);
+    final eta = _computeEta();
+    if (eta != null) _eta = eta;
+    Repo.instance.updateTrackingPosition(p.latitude, p.longitude, eta: eta).catchError((_) {});
   }
 
   Future<void> stop() async {
@@ -170,6 +193,9 @@ class DeliveryTracker extends ChangeNotifier {
     _config = null;
     _days = null;
     _ahead = {};
+    _eta = {};
+    _route = [];
+    _lastPos = null;
     _todayOrders = [];
     notifyListeners();
     await Repo.instance.stopTracking();

@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -8,6 +7,7 @@ import '../web/map_fallback.dart';
 import 'location_picker_page.dart';
 import 'theme.dart';
 import 'widgets.dart';
+import '../services/push.dart';
 
 /// Datos del cliente: nombre, teléfono y dirección de entrega.
 class ProfilePage extends StatefulWidget {
@@ -82,7 +82,7 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           if (!widget.editing)
             TextButton(
-              onPressed: () => FirebaseAuth.instance.signOut(),
+              onPressed: () => signOutAndForgetPush(),
               child: const Text('Salir'),
             ),
         ],
