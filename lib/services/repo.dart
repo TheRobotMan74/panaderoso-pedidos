@@ -31,6 +31,45 @@ class Repo {
       .doc(u.uid)
       .set(u.toProfileMap(), SetOptions(merge: true));
 
+  /// Solo nombre y teléfono (las direcciones se guardan aparte).
+  Future<void> saveNameAndPhone(String uid, String name, String phone) =>
+      _db.collection('users').doc(uid).set({'name': name, 'phone': phone}, SetOptions(merge: true));
+
+  /// Guarda sus direcciones (de 1 a 3). La primera es la principal: también se copia a
+  /// address/lat/lng, que es lo que leen las versiones viejas de la app y el servidor.
+  Future<void> saveAddresses(String uid, List<SavedAddress> list) {
+    if (list.isEmpty) throw ArgumentError('Debe quedar por lo menos una dirección');
+    final main = list.first;
+    return _db.collection('users').doc(uid).set({
+      'addresses': list.take(maxAddresses).map((a) => a.toMap()).toList(),
+      'address': main.address,
+      'addressNotes': main.notes,
+      'lat': main.lat,
+      'lng': main.lng,
+    }, SetOptions(merge: true));
+  }
+
+  /// Cambia a dónde se entrega un pedido que todavía no sale. El servidor revisa
+  /// que se pueda y vuelve a calcular el envío. Regresa el envío nuevo.
+  Future<int> changeOrderAddress(String orderId, SavedAddress a) async {
+    try {
+      final r = await FirebaseFunctions.instance.httpsCallable('cambiarDireccion').call<Object?>({
+        'orderId': orderId,
+        'address': a.address,
+        'addressNotes': a.notes,
+        'lat': a.lat,
+        'lng': a.lng,
+      });
+      return ((r.data as Map?)?['shippingFee'] as num?)?.toInt() ?? 0;
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'not-found') {
+        // La función todavía no está publicada en el servidor.
+        throw RejectedByServer('Esta opción todavía no está lista. Escríbenos por WhatsApp para cambiarla.');
+      }
+      throw RejectedByServer(e.message ?? 'No se pudo cambiar la dirección.');
+    }
+  }
+
   Future<void> saveFcmToken(String uid, String token) =>
       _db.collection('users').doc(uid).set({
         'fcmTokens': FieldValue.arrayUnion([token]),

@@ -12,6 +12,7 @@ import '../promo_widgets.dart';
 import '../status_chip.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'addresses.dart';
 import 'tracking_page.dart';
 
 class MyOrdersPage extends StatefulWidget {
@@ -30,6 +31,7 @@ class MyOrdersPage extends StatefulWidget {
 class _MyOrdersPageState extends State<MyOrdersPage> {
   late final _orders = Repo.instance.myOrders(widget.uid);
   late final _reviews = Repo.instance.myReviews(widget.uid);
+  late final _days = Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
 
   @override
   Widget build(BuildContext context) {
@@ -63,15 +65,29 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
         final past = orders.where(isPast).toList()..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
         return StreamBuilder<List<Review>>(
           stream: _reviews,
-          builder: (context, reviewsSnap) => StreamBuilder<AppConfig>(
+          builder: (context, reviewsSnap) => StreamBuilder<List<DeliveryDay>>(
+            stream: _days,
+            builder: (context, daysSnap) => StreamBuilder<AppConfig>(
             stream: Repo.instance.config(),
             builder: (context, cfg) {
+            // Días en que ya salió el reparto: ahí ya no se cambia la dirección.
+            final closed = {for (final d in daysSnap.data ?? const <DeliveryDay>[]) if (d.closed) d.date};
             final whatsapp = cfg.data?.whatsapp ?? '';
             final reviews = {for (final r in reviewsSnap.data ?? const <Review>[]) r.orderId: r};
             final now = DateTime.now();
             final children = <Widget>[
               for (final o in upcoming)
-                _OrderCard(order: o, homeLat: homeLat, homeLng: homeLng, whatsapp: whatsapp),
+                _OrderCard(
+                  order: o,
+                  homeLat: homeLat,
+                  homeLng: homeLng,
+                  whatsapp: whatsapp,
+                  config: cfg.data,
+                  // Se puede cambiar a dónde llega mientras no salga el reparto de ese día.
+                  canChangeAddress: daysSnap.hasData &&
+                      !closed.contains(o.deliveryDate) &&
+                      (o.status == OrderStatus.recibido || o.status == OrderStatus.confirmado),
+                ),
               if (past.isNotEmpty) const SectionTitle('Pedidos anteriores'),
               for (final o in past)
                 _OrderCard(
@@ -88,6 +104,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
               itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
             );
             },
+          ),
           ),
         );
       },
@@ -112,6 +129,12 @@ class _OrderCard extends StatelessWidget {
 
   /// Su reseña, si ya lo calificó.
   final Review? review;
+
+  /// Todavía se puede cambiar a qué dirección se entrega.
+  final bool canChangeAddress;
+
+  /// Para calcular el envío a la dirección nueva.
+  final AppConfig? config;
   const _OrderCard({
     required this.order,
     this.homeLat,
@@ -120,7 +143,69 @@ class _OrderCard extends StatelessWidget {
     this.past = false,
     this.canReview = false,
     this.review,
+    this.canChangeAddress = false,
+    this.config,
   });
+
+  Future<void> _changeAddress(BuildContext context) async {
+    final o = order;
+    final current = SavedAddress(id: '', label: '', address: o.address, lat: o.lat, lng: o.lng);
+    final user = await Repo.instance.userStream(o.customerId).first;
+    if (!context.mounted) return;
+    final selectedId = user?.addresses
+        .where((a) => current.sameAs(address: a.address, lat: a.lat, lng: a.lng))
+        .firstOrNull
+        ?.id;
+    final a = await pickAddress(
+      context,
+      uid: o.customerId,
+      selectedId: selectedId,
+      title: '¿A dónde llevamos este pedido?',
+    );
+    if (a == null || !context.mounted) return;
+    if (a.sameAs(address: o.address, lat: o.lat, lng: o.lng) && a.notes == o.addressNotes) return;
+
+    // Cuánto queda el envío (el servidor hace la misma cuenta).
+    final cfg = config;
+    final newFee = cfg == null
+        ? o.shippingFee
+        : cfg.shipping.feeForTrip(
+            baseLat: cfg.baseLat,
+            baseLng: cfg.baseLng,
+            homeLat: a.lat,
+            homeLng: a.lng,
+            pieces: o.loyaltyPieces ?? o.paidPieces,
+          );
+    final diff = newFee - o.shippingFee;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('¿Llevarlo a "${a.label}"?'),
+        content: Text([
+          a.address,
+          if (diff != 0) 'El envío cambia de ${money(o.shippingFee.toDouble())} a ${money(newFee.toDouble())}.',
+          if (diff > 0 && o.paymentMethod == PaymentMethod.transferencia)
+            'Como ya pagaste por transferencia, la diferencia (${money(diff.toDouble())}) se paga al recibir.',
+          if (diff < 0 && o.paymentMethod == PaymentMethod.transferencia)
+            'Como ya pagaste por transferencia, Panaderoso te ajusta la diferencia (${money(-diff.toDouble())}).',
+        ].join('\n\n')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('No')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Sí, cambiar')),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await Repo.instance.changeOrderAddress(o.id, a);
+      messenger.showSnackBar(SnackBar(content: Text('Listo, lo llevamos a "${a.label}" 🐻')));
+    } on RejectedByServer catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('No se pudo cambiar la dirección. Intenta de nuevo. ($e)')));
+    }
+  }
 
   Future<void> _openWhatsApp(BuildContext context) async {
     final o = order;
@@ -218,6 +303,21 @@ class _OrderCard extends StatelessWidget {
               ],
             ),
           ),
+          if (!past && o.address.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.place_outlined, size: 17, color: Pan.canela),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(o.address,
+                      maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
+                ),
+                if (canChangeAddress)
+                  TextButton(onPressed: () => _changeAddress(context), child: const Text('Cambiar')),
+              ],
+            ),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [

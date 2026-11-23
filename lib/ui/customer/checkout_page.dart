@@ -16,6 +16,7 @@ import '../promo_widgets.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'addresses.dart';
 
 /// Confirmar pedido: día, horario, forma de pago y captura de transferencia.
 class CheckoutPage extends StatefulWidget {
@@ -43,6 +44,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
   /// Nombre del pan que se regala (para el festejo).
   String? _giftName;
 
+  /// A dónde se entrega (de sus direcciones guardadas; empieza en la principal).
+  late SavedAddress? _dest = widget.user.addresses.firstOrNull;
+
+  Future<void> _chooseAddress() async {
+    final a = await pickAddress(context, uid: widget.user.uid, selectedId: _dest?.id);
+    if (a != null && mounted) setState(() => _dest = a);
+  }
+
   Future<void> _pickProof() async {
     final x = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -66,13 +75,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
         proofPath = await Repo.instance.uploadPaymentProof(widget.user.uid, _proof!);
       }
       final u = widget.user;
+      final dest = _dest;
       final gifts = await Repo.instance.createOrder(BakeryOrder(
         id: '',
         customerId: u.uid,
         customerName: u.name,
         phone: u.phone,
-        address: u.address,
-        addressNotes: u.addressNotes,
+        address: dest?.address ?? u.address,
+        addressNotes: dest?.notes ?? u.addressNotes,
         items: widget.cart.items,
         deliveryDate: day.date,
         slot: _slot!,
@@ -82,8 +92,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         // el servidor hace la misma cuenta y guarda la suya.
         shippingFee: _fee,
         notes: _notes.text.trim(),
-        lat: u.lat,
-        lng: u.lng,
+        lat: dest != null ? dest.lat : u.lat,
+        lng: dest != null ? dest.lng : u.lng,
       ));
       if (!mounted) {
         widget.cart.clear();
@@ -166,11 +176,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
         !_busy && day != null && _slot != null && !needsProof && !cart.isEmpty && over.isEmpty;
     final d = Motion.of(context, Motion.medio);
     final u = widget.user;
+    final dest = _dest;
     _fee = cfg.shipping.feeForTrip(
       baseLat: cfg.baseLat,
       baseLng: cfg.baseLng,
-      homeLat: u.lat,
-      homeLng: u.lng,
+      homeLat: dest != null ? dest.lat : u.lat,
+      homeLng: dest != null ? dest.lng : u.lng,
       pieces: cart.pieces,
     );
     final total = cart.subtotal + _fee;
@@ -314,6 +325,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
           ),
         ),
+
+        // ----- Dirección -----
+        const SectionTitle('Entregar en'),
+        if (dest != null)
+          PanCard(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+            onTap: _chooseAddress,
+            child: AddressSummary(
+              address: dest,
+              main: dest.id == u.addresses.firstOrNull?.id,
+              trailing: TextButton(onPressed: _chooseAddress, child: const Text('Cambiar')),
+            ),
+          ),
 
         // ----- Día y horario -----
         const SectionTitle('¿Qué día te lo llevamos?'),
