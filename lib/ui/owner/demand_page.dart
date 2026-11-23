@@ -2,16 +2,21 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import '../../logic/archive.dart';
 import '../../logic/demand.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../fold_memory.dart';
 import '../format.dart';
 import '../product_image.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
 /// Cuántos pedidos y piezas hay por día y por horario, para planear las charolas.
+/// Cada día se pliega tocando su encabezado (se recuerda en el celular); los
+/// días sin pedidos empiezan plegados. Los días ya repartidos no salen aquí:
+/// van al Historial, igual que en Pedidos (ver logic/archive.dart).
 class DemandPage extends StatelessWidget {
   const DemandPage({super.key});
 
@@ -29,7 +34,14 @@ class DemandPage extends StatelessWidget {
           final days = daysSnap.data!;
           final orders = ordersSnap.data!;
           // Días publicados y también días con pedidos (por si se cerró uno con pedidos).
-          final dates = {...days.map((d) => d.date), ...orders.map((o) => o.deliveryDate)}.toList()
+          final finished = finishedDates(
+            orders,
+            today: today,
+            days: {for (final d in days) d.date: d},
+          );
+          final dates = {...days.map((d) => d.date), ...orders.map((o) => o.deliveryDate)}
+              .where((d) => !finished.contains(d))
+              .toList()
             ..sort();
           if (dates.isEmpty) {
             return const EmptyState(
@@ -37,7 +49,9 @@ class DemandPage extends StatelessWidget {
               message: 'Abre días de entrega en la pestaña "Días" para empezar a recibir pedidos.',
             );
           }
-          return ListView(
+          return ValueListenableBuilder<int>(
+            valueListenable: FoldMemory.changes,
+            builder: (context, _, _) => ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
             children: [
               for (final (i, date) in dates.indexed)
@@ -53,6 +67,7 @@ class DemandPage extends StatelessWidget {
                   ),
                 ),
             ],
+          ),
           );
         },
       ),
@@ -71,12 +86,46 @@ class _DayCard extends StatelessWidget {
     final maxQty = products.isEmpty
         ? 1
         : demand.totalByProduct.values.reduce((a, b) => a > b ? a : b);
+    final key = 'demanda|${demand.date}';
+    final open = FoldMemory.isOpen(key, byDefault: demand.orders > 0);
+    final summary = demand.orders == 0
+        ? 'Sin pedidos todavía'
+        : '${demand.orders} ${demand.orders == 1 ? 'pedido' : 'pedidos'} · '
+            '${demand.pieces} ${demand.pieces == 1 ? 'pieza' : 'piezas'}';
     return PanCard(
       margin: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(capitalize(dayLabel(demand.date)), style: theme.textTheme.titleLarge),
+          FoldHeader(
+            open: open,
+            onTap: () => FoldMemory.set(key, !open),
+            semanticsLabel: open ? 'Plegar día' : 'Abrir día',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(capitalize(dayLabel(demand.date)), style: theme.textTheme.titleLarge),
+                // Plegada: el resumen en un renglón.
+                AnimatedSize(
+                  duration: Motion.of(context, Motion.rapido),
+                  curve: Motion.curva,
+                  alignment: Alignment.topLeft,
+                  child: open
+                      ? const SizedBox(width: double.infinity)
+                      : Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(summary,
+                              style: theme.textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w700)),
+                        ),
+                ),
+              ],
+            ),
+          ),
+          FoldBody(
+            open: open,
+            child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           const SizedBox(height: 10),
           Row(
             children: [
@@ -102,6 +151,9 @@ class _DayCard extends StatelessWidget {
             const SizedBox(height: 4),
             SlotDemandTable(demand: demand, products: products),
           ],
+        ],
+            ),
+          ),
         ],
       ),
     );
