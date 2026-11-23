@@ -31,17 +31,15 @@ class _HistoryPageState extends State<HistoryPage> {
 
   static DateTime _firstOf(DateTime d) => DateTime(d.year, d.month);
 
-  static Stream<List<BakeryOrder>> _ordersOf(DateTime month) => Repo.instance.ordersBetween(
-        dateKey(month),
-        dateKey(DateTime(month.year, month.month + 1)),
-      );
+  static Stream<List<BakeryOrder>> _ordersOf(DateTime month) =>
+      Repo.instance.ordersBetween(dateKey(month), dateKey(DateTime(month.year, month.month + 1)));
 
   bool get _isCurrentMonth => _month == _firstOf(DateTime.now());
 
   void _go(int delta) => setState(() {
-        _month = DateTime(_month.year, _month.month + delta);
-        _orders = _ordersOf(_month);
-      });
+    _month = DateTime(_month.year, _month.month + delta);
+    _orders = _ordersOf(_month);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -69,11 +67,7 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Widget _body(
-    BuildContext context,
-    AsyncSnapshot<List<BakeryOrder>> snap,
-    AsyncSnapshot<List<DeliveryDay>> daysSnap,
-  ) {
+  Widget _body(BuildContext context, AsyncSnapshot<List<BakeryOrder>> snap, AsyncSnapshot<List<DeliveryDay>> daysSnap) {
     if (snap.hasError) {
       return EmptyState(title: 'No cargó el historial', message: '${snap.error}');
     }
@@ -114,28 +108,15 @@ class _MonthSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-        child: Row(
-          children: [
-            IconButton(
-              tooltip: 'Mes anterior',
-              onPressed: onPrev,
-              icon: const Icon(Icons.chevron_left_rounded),
-            ),
-            Expanded(
-              child: AnimatedCount(
-                label,
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-            ),
-            IconButton(
-              tooltip: 'Mes siguiente',
-              onPressed: onNext,
-              icon: const Icon(Icons.chevron_right_rounded),
-            ),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+    child: Row(
+      children: [
+        IconButton(tooltip: 'Mes anterior', onPressed: onPrev, icon: const Icon(Icons.chevron_left_rounded)),
+        Expanded(child: AnimatedCount(label, style: Theme.of(context).textTheme.titleLarge)),
+        IconButton(tooltip: 'Mes siguiente', onPressed: onNext, icon: const Icon(Icons.chevron_right_rounded)),
+      ],
+    ),
+  );
 }
 
 /// Totales del mes: lo vendido, cómo se pagó y lo que falta cobrar.
@@ -204,17 +185,20 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: Pan.papel, borderRadius: BorderRadius.circular(14)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: Pan.tostado),
-            const SizedBox(width: 5),
-            Text(text, style: const TextStyle(fontWeight: FontWeight.w800, color: Pan.tostado)),
-          ],
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(color: Pan.papel, borderRadius: BorderRadius.circular(14)),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 15, color: Pan.tostado),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: const TextStyle(fontWeight: FontWeight.w800, color: Pan.tostado),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _Line extends StatelessWidget {
@@ -251,7 +235,8 @@ class _DayCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final s = SalesSummary.of(orders);
-    final sorted = [...orders]..sort((a, b) {
+    final sorted = [...orders]
+      ..sort((a, b) {
         final c = a.slot.compareTo(b.slot);
         return c != 0 ? c : a.customerName.compareTo(b.customerName);
       });
@@ -286,10 +271,16 @@ class _DayCard extends StatelessWidget {
                 ),
                 subtitle: Text(
                   '${o.items.map((i) => '${i.qty} ${i.name}').join(', ')}\n'
-                  '${money(o.total)} · ${_payLabel(o)}',
+                  '${money(o.total)} · ${payLabel(o)}',
                   style: theme.textTheme.bodySmall,
                 ),
                 isThreeLine: true,
+                onTap: () => showModalBottomSheet<void>(
+                  context: context,
+                  showDragHandle: true,
+                  isScrollControlled: true,
+                  builder: (_) => _OrderSheet(order: o),
+                ),
                 trailing: DeleteOrderButton(order: o),
               ),
           ],
@@ -298,12 +289,118 @@ class _DayCard extends StatelessWidget {
     );
   }
 
-  static String _payLabel(BakeryOrder o) {
-    if (o.status == OrderStatus.cancelado) return 'Cancelado';
-    if (o.status != OrderStatus.entregado) return 'Sin marcar como entregado';
-    if (o.paymentMethod == PaymentMethod.efectivo) {
-      return o.cashCollected ? 'Efectivo, cobrado' : 'Efectivo, sin marcar cobrado';
+  
+}
+
+String payLabel(BakeryOrder o) {
+  if (o.status == OrderStatus.cancelado) return 'Cancelado';
+  if (o.status != OrderStatus.entregado) return 'Sin marcar como entregado';
+  if (o.paymentMethod == PaymentMethod.efectivo) {
+    return o.cashCollected ? 'Efectivo, cobrado' : 'Efectivo, sin marcar cobrado';
+  }
+  return o.paymentVerified ? 'Transferencia verificada' : 'Transferencia sin verificar';
+}
+
+/// Al tocar un pedido del Historial: ver la captura y marcar que ya pagó
+/// (o que sí se entregó, si se quedó sin marcar).
+class _OrderSheet extends StatefulWidget {
+  final BakeryOrder order;
+  const _OrderSheet({required this.order});
+
+  @override
+  State<_OrderSheet> createState() => _OrderSheetState();
+}
+
+class _OrderSheetState extends State<_OrderSheet> {
+  late final Future<String?> _proof = widget.order.paymentProofPath == null
+      ? Future.value(null)
+      : Repo.instance.paymentProofUrl(widget.order.paymentProofPath!).then<String?>((u) => u, onError: (_) => null);
+  bool _busy = false;
+
+  Future<void> _save(Map<String, dynamic> changes, String done) async {
+    setState(() => _busy = true);
+    try {
+      await Repo.instance.updateOrder(widget.order.id, changes);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(done)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo guardar. Intenta de nuevo. ($e)')));
     }
-    return o.paymentVerified ? 'Transferencia verificada' : 'Transferencia sin verificar';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final o = widget.order;
+    final theme = Theme.of(context);
+    final isCash = o.paymentMethod == PaymentMethod.efectivo;
+    final paid = isCash ? o.cashCollected : o.paymentVerified;
+    final cancelled = o.status == OrderStatus.cancelado;
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(o.customerName, style: theme.textTheme.titleLarge),
+            const SizedBox(height: 4),
+            Text('${capitalize(dayLabel(o.deliveryDate))} · ${money(o.total)}', style: theme.textTheme.bodySmall),
+            const SizedBox(height: 2),
+            Text(payLabel(o), style: theme.textTheme.bodyMedium),
+            if (!isCash) ...[
+              const SizedBox(height: 14),
+              FutureBuilder<String?>(
+                future: _proof,
+                builder: (context, snap) {
+                  if (o.paymentProofPath == null) {
+                    return Text('No subió captura del pago.', style: theme.textTheme.bodySmall);
+                  }
+                  if (snap.connectionState != ConnectionState.done) {
+                    return const Center(
+                      child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator()),
+                    );
+                  }
+                  final url = snap.data;
+                  if (url == null) return Text('No cargó la captura.', style: theme.textTheme.bodySmall);
+                  return ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
+                      child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
+                    ),
+                  );
+                },
+              ),
+            ],
+            const SizedBox(height: 16),
+            if (!cancelled && o.status != OrderStatus.entregado)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: OutlinedButton.icon(
+                  onPressed: _busy
+                      ? null
+                      : () => _save({'status': OrderStatus.entregado.name}, 'Marcado como entregado ✓'),
+                  icon: const Icon(Icons.check_circle_outline_rounded),
+                  label: const Text('Sí se entregó'),
+                ),
+              ),
+            if (!cancelled && !paid)
+              FilledButton.icon(
+                onPressed: _busy
+                    ? null
+                    : () => _save({
+                        isCash ? 'cashCollected' : 'paymentVerified': true,
+                      }, isCash ? 'Marcado como cobrado ✓' : 'Pago verificado ✓'),
+                icon: const Icon(Icons.payments_rounded),
+                label: Text(isCash ? 'Ya me pagó (cobrado)' : 'Ya me pagó (verificar transferencia)'),
+              )
+            else if (!cancelled)
+              Text('Ya está pagado ✓', textAlign: TextAlign.center, style: theme.textTheme.titleSmall),
+          ],
+        ),
+      ),
+    );
   }
 }
