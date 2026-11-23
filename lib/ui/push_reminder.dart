@@ -2,10 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../services/push.dart';
+import 'fold_store.dart';
 import 'theme.dart';
 
 /// Recordatorio para prender las notificaciones (Android), si están apagadas.
 /// Se quita solo en cuanto las prenden (se revisa al volver a la app).
+///
+/// En el inicio sale solo una de cada 3 veces que se abre la app (la 1.ª, 4.ª,
+/// 7.ª…), para animar sin fastidiar. En el mapa del pedido sale siempre que
+/// estén apagadas, porque ahí es justo cuando sirven.
 ///
 /// [compact]: versión sin ✕ para el mapa de "¿Dónde va mi pedido?".
 class PushReminder extends StatefulWidget {
@@ -16,10 +21,41 @@ class PushReminder extends StatefulWidget {
   State<PushReminder> createState() => _PushReminderState();
 }
 
+/// ¿Toca recordar en esta apertura de la app? [openNumber] empieza en 1.
+bool remindOnOpen(int openNumber) => openNumber % 3 == 1;
+
+/// Cuenta las veces que se abre la app (una por arranque) en un archivito del celular.
+Future<bool> _countOpen() async {
+  var n = 0;
+  try {
+    n = int.tryParse((await FoldStore.read(name: 'panaderoso_aperturas'))?.trim() ?? '') ?? 0;
+  } catch (_) {}
+  n++;
+  try {
+    await FoldStore.write('$n', name: 'panaderoso_aperturas');
+  } catch (_) {}
+  return remindOnOpen(n);
+}
+
 class _PushReminderState extends State<PushReminder> {
   /// Se cerró con la ✕: no vuelve a salir hasta que se abra otra vez la app.
   static bool _dismissed = false;
+
+  /// Si en esta apertura de la app toca recordar (se calcula una sola vez).
+  static final Future<bool> _thisOpen = _countOpen();
+  static bool _turn = false;
+
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.compact && !kIsWeb) {
+      _thisOpen.then((v) {
+        if (v != _turn && mounted) setState(() => _turn = v);
+      });
+    }
+  }
 
   /// Ya se le pidió el permiso y Android no lo mostró: el botón lleva a Ajustes.
   bool _goToSettings = false;
@@ -57,7 +93,7 @@ class _PushReminderState extends State<PushReminder> {
     return ValueListenableBuilder<bool?>(
       valueListenable: Push.enabled,
       builder: (context, enabled, _) {
-        final show = enabled == false && (widget.compact || !_dismissed);
+        final show = enabled == false && (widget.compact || (_turn && !_dismissed));
         return AnimatedSize(
           duration: Motion.of(context, Motion.medio),
           curve: Curves.easeOutCubic,
@@ -86,7 +122,7 @@ class _PushReminderState extends State<PushReminder> {
                                   TextSpan(
                                     text: widget.compact
                                         ? 'Préndelos y te avisamos cuando tu pan esté cerca.'
-                                        : 'Préndelos para saber cuando tu pan va en camino y cuando ya está cerca.',
+                                        : 'Préndelos y te avisamos cuando confirmemos tu pedido, cuando salga en camino y cuando ya esté cerca de tu casa 🐻',
                                   ),
                                 ],
                               ),

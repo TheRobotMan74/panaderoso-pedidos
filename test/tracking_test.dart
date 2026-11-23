@@ -4,6 +4,7 @@ import 'package:panaderoso_pedidos/logic/eta.dart';
 import 'package:panaderoso_pedidos/logic/geo.dart';
 import 'package:panaderoso_pedidos/models.dart';
 import 'package:panaderoso_pedidos/ui/customer/tracking_page.dart';
+import 'package:panaderoso_pedidos/ui/push_reminder.dart';
 
 BakeryOrder _order(
   String id,
@@ -174,5 +175,9 @@ void main() {
       );
       expect(v.title, 'El repartidor todavía no sale');
     });
+  });
+
+  test('recordatorio de avisos: una de cada 3 veces que se abre la app', () {
+    expect([for (var n = 1; n <= 7; n++) remindOnOpen(n)], [true, false, false, true, false, false, true]);
   });
 }
