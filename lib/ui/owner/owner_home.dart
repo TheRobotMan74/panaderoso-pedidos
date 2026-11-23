@@ -6,6 +6,7 @@ import '../widgets.dart';
 import 'calendar_page.dart';
 import 'delivery_banner.dart';
 import 'demand_page.dart';
+import 'feedback_page.dart';
 import 'loyalty_customers_page.dart';
 import 'orders_page.dart';
 import 'products_page.dart';
@@ -23,6 +24,7 @@ class OwnerHome extends StatefulWidget {
 
 class _OwnerHomeState extends State<OwnerHome> {
   int _tab = 0;
+  late final _newFeedback = unseenFeedbackCount();
 
   static const _titles = ['Pedidos', 'Demanda', 'Días de entrega', 'Productos', 'Ajustes'];
 
@@ -37,15 +39,36 @@ class _OwnerHomeState extends State<OwnerHome> {
             const BearLogo(size: 38),
             const SizedBox(width: 12),
             Expanded(
-              child: AnimatedCount(
-                _titles[_tab],
-                style: Theme.of(context).appBarTheme.titleTextStyle,
+              // Con tantos íconos arriba, un título largo se achica en vez de cortarse.
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
                 alignment: Alignment.centerLeft,
+                child: AnimatedCount(
+                  _titles[_tab],
+                  style: Theme.of(context).appBarTheme.titleTextStyle,
+                  alignment: Alignment.centerLeft,
+                ),
               ),
             ),
           ],
         ),
         actions: [
+          StreamBuilder<int>(
+            stream: _newFeedback,
+            builder: (context, snap) {
+              final n = snap.data ?? 0;
+              return IconButton(
+                tooltip: 'Reseñas e ideas de clientes',
+                icon: Badge(
+                  isLabelVisible: n > 0,
+                  label: Text('$n'),
+                  child: const Icon(Icons.reviews_rounded),
+                ),
+                onPressed: () => Navigator.of(context)
+                    .push(MaterialPageRoute<void>(builder: (_) => const FeedbackPage())),
+              );
+            },
+          ),
           IconButton(
             tooltip: 'Tarjetas de lealtad',
             icon: const Icon(Icons.card_giftcard_rounded),

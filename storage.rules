@@ -20,6 +20,13 @@ service firebase.storage {
       allow read: if request.auth != null && (request.auth.uid == uid || isOwner());
     }
 
+    // Fotos de las reseñas: las sube el cliente y las ve cualquiera con cuenta
+    // (el dueño puede mostrar la reseña a todos los clientes).
+    match /review-photos/{uid}/{file} {
+      allow create: if request.auth != null && request.auth.uid == uid && isImageUnder10MB();
+      allow read: if request.auth != null;
+    }
+
     // Fotos de productos: todos las ven, solo el dueño las sube.
     match /products/{file} {
       allow read: if request.auth != null;
