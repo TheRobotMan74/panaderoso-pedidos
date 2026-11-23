@@ -247,6 +247,15 @@ class Repo {
       .snapshots()
       .map(_toOrders);
 
+  /// Pedidos para entregar entre [fromDate] y antes de [toDate] (para el Historial).
+  Stream<List<BakeryOrder>> ordersBetween(String fromDate, String toDate) => _db
+      .collection('orders')
+      .where('deliveryDate', isGreaterThanOrEqualTo: fromDate)
+      .where('deliveryDate', isLessThan: toDate)
+      .orderBy('deliveryDate')
+      .snapshots()
+      .map(_toOrders);
+
   Future<void> updateOrder(String id, Map<String, dynamic> changes) =>
       _db.collection('orders').doc(id).update(changes);
 

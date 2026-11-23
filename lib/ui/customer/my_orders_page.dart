@@ -40,21 +40,32 @@ class MyOrdersPage extends StatelessWidget {
             message: 'Cuando pidas tu pan, aquí verás cómo va, paso a paso.',
           );
         }
+        // Arriba lo que viene (el más próximo primero); abajo, ya sin pasos ni
+        // botones, lo entregado, lo cancelado y lo de días que ya pasaron.
+        final today = dateKey(DateTime.now());
+        bool isPast(BakeryOrder o) => !o.isPending || o.deliveryDate.compareTo(today) < 0;
+        final upcoming = orders.where((o) => !isPast(o)).toList()
+          ..sort((a, b) {
+            final c = a.deliveryDate.compareTo(b.deliveryDate);
+            return c != 0 ? c : a.slot.compareTo(b.slot);
+          });
+        final past = orders.where(isPast).toList()..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
         return StreamBuilder<AppConfig>(
           stream: Repo.instance.config(),
-          builder: (context, cfg) => ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-            itemCount: orders.length,
-            itemBuilder: (context, i) => FadeSlideIn(
-              index: i,
-              child: _OrderCard(
-                order: orders[i],
-                homeLat: homeLat,
-                homeLng: homeLng,
-                whatsapp: cfg.data?.whatsapp ?? '',
-              ),
-            ),
-          ),
+          builder: (context, cfg) {
+            final whatsapp = cfg.data?.whatsapp ?? '';
+            final children = <Widget>[
+              for (final o in upcoming)
+                _OrderCard(order: o, homeLat: homeLat, homeLng: homeLng, whatsapp: whatsapp),
+              if (past.isNotEmpty) const SectionTitle('Pedidos anteriores'),
+              for (final o in past) _OrderCard(order: o, past: true),
+            ];
+            return ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              itemCount: children.length,
+              itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
+            );
+          },
         );
       },
     );
@@ -68,7 +79,11 @@ class _OrderCard extends StatelessWidget {
 
   /// WhatsApp de la panadería ('' = sin botón).
   final String whatsapp;
-  const _OrderCard({required this.order, this.homeLat, this.homeLng, this.whatsapp = ''});
+
+  /// Ya entregado, cancelado o de un día que pasó: solo se ve lo que pidió,
+  /// sin pasos ni botones, para que no parezca que sigue en camino.
+  final bool past;
+  const _OrderCard({required this.order, this.homeLat, this.homeLng, this.whatsapp = '', this.past = false});
 
   Future<void> _openWhatsApp(BuildContext context) async {
     final o = order;
@@ -87,7 +102,8 @@ class _OrderCard extends StatelessWidget {
     final o = order;
     final theme = Theme.of(context);
     // El día de la entrega se puede ver por dónde va el repartidor.
-    final canTrack = o.isPending &&
+    final canTrack = !past &&
+        o.isPending &&
         (o.status == OrderStatus.enCamino || o.deliveryDate == dateKey(DateTime.now()));
     final isCash = o.paymentMethod == PaymentMethod.efectivo;
     return PanCard(
@@ -115,14 +131,14 @@ class _OrderCard extends StatelessWidget {
                   ],
                 ),
               ),
-              StatusChip(status: o.status),
+              if (past && o.isPending) const _PastChip() else StatusChip(status: o.status),
             ],
           ),
-          if (o.wasMoved && o.isPending) ...[
+          if (!past && o.wasMoved && o.isPending) ...[
             const SizedBox(height: 12),
             _MovedNotice(order: o),
           ],
-          if (o.status != OrderStatus.cancelado) ...[
+          if (!past && o.status != OrderStatus.cancelado) ...[
             const SizedBox(height: 16),
             OrderProgress(status: o.status),
           ],
@@ -181,7 +197,7 @@ class _OrderCard extends StatelessWidget {
                   style: theme.textTheme.titleLarge!.copyWith(color: Pan.caramelo, fontSize: 19)),
             ],
           ),
-          if (whatsapp.isNotEmpty) ...[
+          if (!past && whatsapp.isNotEmpty) ...[
             const SizedBox(height: 6),
             Align(
               alignment: Alignment.centerLeft,
@@ -209,6 +225,26 @@ class _OrderCard extends StatelessWidget {
       ),
     );
   }
+}
+
+/// En vez del estado, para un pedido de un día que ya pasó y nunca se marcó entregado.
+class _PastChip extends StatelessWidget {
+  const _PastChip();
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.fromLTRB(8, 4, 10, 4),
+        decoration: BoxDecoration(color: const Color(0xFFEDE6DC), borderRadius: BorderRadius.circular(20)),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.history_rounded, size: 15, color: Color(0xFF7D7064)),
+            SizedBox(width: 4),
+            Text('Ya pasó',
+                style: TextStyle(color: Color(0xFF7D7064), fontWeight: FontWeight.w800, fontSize: 12.5)),
+          ],
+        ),
+      );
 }
 
 /// "Cambiamos tu entrega": cuando el dueño movió el día o el horario.
