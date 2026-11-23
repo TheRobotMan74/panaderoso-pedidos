@@ -6,15 +6,16 @@ import 'dart:io';
 class FoldStore {
   FoldStore._();
 
-  static File get _file => File('${Directory.systemTemp.path}/panaderoso_plegados.json');
+  static File _file(String name) => File('${Directory.systemTemp.path}/$name.json');
 
-  static Future<String?> read() async {
-    final f = _file;
+  /// [name]: qué archivito (por defecto el de las tarjetas plegadas).
+  static Future<String?> read({String name = 'panaderoso_plegados'}) async {
+    final f = _file(name);
     return await f.exists() ? f.readAsString() : null;
   }
 
-  static Future<void> write(String data) async {
-    final f = _file;
+  static Future<void> write(String data, {String name = 'panaderoso_plegados'}) async {
+    final f = _file(name);
     final tmp = File('${f.path}.tmp');
     await tmp.writeAsString(data, flush: true);
     await tmp.rename(f.path);
