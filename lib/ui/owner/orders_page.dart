@@ -7,6 +7,7 @@ import '../../logic/day_route.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../fold_memory.dart';
 import '../format.dart';
 import '../product_image.dart';
 import '../promo_widgets.dart';
@@ -24,6 +25,10 @@ import 'route_editor_page.dart';
 /// Hasta abajo: los cancelados (plegados) y el botón del Historial, donde se
 /// archivan los días ya repartidos (ver logic/archive.dart) con lo vendido.
 /// Con "Seleccionar varios" se pueden borrar muchos de un jalón (por ejemplo, los de prueba).
+/// Cada día y cada horario se pliegan tocando su encabezado (se recuerda en el
+/// celular). Empiezan abiertos el día más próximo y sus horarios con algo
+/// pendiente; los días siguientes y los horarios ya entregados, plegados.
+/// Mientras se selecciona para borrar, todo se abre, para ver qué se borra.
 class OrdersPage extends StatefulWidget {
   const OrdersPage({super.key});
 
@@ -41,6 +46,22 @@ class _OrdersPageState extends State<OrdersPage> {
   /// Días de entrega (para el orden de ruta que se haya guardado a mano).
   late final Stream<List<DeliveryDay>> _days =
       Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
+
+  @override
+  void initState() {
+    super.initState();
+    FoldMemory.changes.addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    FoldMemory.changes.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
 
   void _toggle(String id) {
     HapticFeedback.selectionClick();
@@ -190,28 +211,60 @@ class _OrdersPageState extends State<OrdersPage> {
         String? lastDate;
         String? lastSlot;
         var stop = 0;
+        var dayOpen = true;
+        var slotOpen = true;
+        final firstDate = orders.isEmpty ? null : orders.first.deliveryDate;
         for (final o in orders) {
           if (o.deliveryDate != lastDate) {
             lastDate = o.deliveryDate;
             lastSlot = null;
             stop = 0;
-            final count = orders.where((x) => x.deliveryDate == o.deliveryDate).length;
+            final dayOrders = orders.where((x) => x.deliveryDate == o.deliveryDate).toList();
+            final count = dayOrders.length;
+            final done = dayOrders.where((x) => x.status == OrderStatus.entregado).length;
+            final key = 'pedidos|${o.deliveryDate}';
+            dayOpen = _selecting || FoldMemory.isOpen(key, byDefault: o.deliveryDate == firstDate);
+            final open = dayOpen;
             children.add(
-              SectionTitle(
-                capitalize(dayLabel(o.deliveryDate)),
-                trailing: Text(
-                  '$count ${count == 1 ? 'pedido' : 'pedidos'}',
-                  style: Theme.of(context).textTheme.bodySmall,
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: FoldHeader(
+                  open: open,
+                  onTap: _selecting ? null : () => FoldMemory.set(key, !open),
+                  semanticsLabel: open ? 'Plegar día' : 'Abrir día',
+                  padding: const EdgeInsets.fromLTRB(0, 6, 4, 6),
+                  child: SectionTitle(
+                    capitalize(dayLabel(o.deliveryDate)),
+                    padding: const EdgeInsets.only(left: 4),
+                    trailing: Text(
+                      '$count ${count == 1 ? 'pedido' : 'pedidos'}'
+                      '${done > 0 ? ' · $done ✓' : ''}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
                 ),
               ),
             );
           }
           if (o.slot != lastSlot) {
             lastSlot = o.slot;
+            final slotOrders =
+                orders.where((x) => x.deliveryDate == o.deliveryDate && x.slot == o.slot).toList();
+            final allDone = slotOrders.every((x) => x.status == OrderStatus.entregado);
+            final key = 'pedidos|${o.deliveryDate}|${o.slot}';
+            slotOpen = _selecting || FoldMemory.isOpen(key, byDefault: !allDone);
+            final open = slotOpen;
+            final n = slotOrders.length;
+            if (dayOpen) {
             children.add(
               Padding(
                 padding: const EdgeInsets.fromLTRB(2, 6, 2, 4),
-                child: Row(
+                child: FoldHeader(
+                  open: open,
+                  onTap: _selecting ? null : () => FoldMemory.set(key, !open),
+                  semanticsLabel: open ? 'Plegar horario' : 'Abrir horario',
+                  padding: const EdgeInsets.only(right: 4),
+                  child: Row(
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -228,12 +281,23 @@ class _OrdersPageState extends State<OrdersPage> {
                         ],
                       ),
                     ),
+                    const Spacer(),
+                    Text(
+                      allDone
+                          ? '$n ${n == 1 ? 'entregado' : 'entregados'} ✓'
+                          : '$n ${n == 1 ? 'pedido' : 'pedidos'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ],
+                ),
                 ),
               ),
             );
+            }
           }
           stop++;
+          // Plegado: no se dibuja, pero cuenta para el número de parada.
+          if (!dayOpen || !slotOpen) continue;
           final daySlots = orders
               .where((x) => x.deliveryDate == o.deliveryDate)
               .map((x) => x.slot)
