@@ -94,4 +94,37 @@ void main() {
     expect(giftProduct(const PromoRules(giftProductId: 'a'), ps)?.id, 'a');
     expect(giftProduct(rules, [ps[0], ps[1].copyWith(available: false)]), isNull);
   });
+
+  test('el dueño ve la tarjeta de cada cliente', () {
+    BakeryOrder de(String id, String name, BakeryOrder o) => BakeryOrder(
+          id: '',
+          customerId: id,
+          customerName: name,
+          phone: '81',
+          address: '',
+          items: o.items,
+          deliveryDate: o.deliveryDate,
+          slot: o.slot,
+          paymentMethod: o.paymentMethod,
+          status: o.status,
+          loyaltyPieces: o.loyaltyPieces,
+        );
+    final list = customersLoyalty([
+      de('ana', 'Ana', _order(3, welcomeGift: 1)),
+      de('ana', 'Ana', _order(5)),
+      de('beto', 'Beto', _order(9, counted: false)),
+      de('caro', 'Caro', _order(12, loyaltyGift: 1)),
+      de('caro', 'Caro', _order(2, status: OrderStatus.cancelado)),
+    ], 10);
+    expect(list.map((c) => c.name), ['Ana', 'Caro', 'Beto']);
+    final ana = list[0];
+    expect(ana.card.pieces, 8);
+    expect(ana.welcomeUsed, isTrue);
+    expect(ana.orders, 2);
+    final caro = list[1];
+    expect(caro.card.progress(10), 2);
+    expect(caro.loyaltyGiven, 1);
+    expect(caro.orders, 1);
+    expect(list[2].card.pieces, 0);
+  });
 }

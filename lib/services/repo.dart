@@ -239,6 +239,10 @@ class Repo {
       .snapshots()
       .map(_toOrders);
 
+  /// Todos los pedidos (para ver la tarjeta de lealtad de cada cliente). Solo el dueño.
+  Stream<List<BakeryOrder>> allOrders() =>
+      _db.collection('orders').snapshots().map(_toOrders);
+
   /// Pedidos para entregar desde [fromDate] (para el panel del dueño).
   Stream<List<BakeryOrder>> ordersFrom(String fromDate) => _db
       .collection('orders')
