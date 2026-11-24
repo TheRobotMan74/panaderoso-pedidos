@@ -10,7 +10,8 @@ import '../models.dart';
 
 /// Acceso a los datos en Firebase. Colecciones:
 /// users, products, deliveryDays, dayStock, orders, config/app, tracking/current,
-/// reviews (una por pedido) y suggestions (ideas de pan nuevo).
+/// reviews (una por pedido), suggestions (ideas de pan nuevo) y dayRequests
+/// (días y horas que sugieren los clientes).
 class Repo {
   Repo._();
   static final instance = Repo._();
@@ -504,6 +505,40 @@ class Repo {
       final batch = _db.batch();
       for (final ref in refs.skip(i).take(400)) {
         batch.update(ref, {'seen': true});
+      }
+      await batch.commit();
+    }
+  }
+
+  // ---------- Días que piden los clientes ----------
+
+  CollectionReference<Map<String, dynamic>> get _dayRequests => _db.collection('dayRequests');
+
+  List<DayRequest> _toDayRequests(QuerySnapshot<Map<String, dynamic>> s) =>
+      s.docs.map((d) => DayRequest.fromMap(d.id, d.data())).toList()..sort((a, b) => a.date.compareTo(b.date));
+
+  /// El cliente sugiere un día y hora. Si ya había sugerido ese día, se reemplaza
+  /// (y vuelve a salir como nueva para el dueño).
+  Future<void> sendDayRequest(DayRequest r) => _dayRequests
+      .doc(DayRequest.idFor(r.customerId, r.date))
+      .set({...r.toMap(), 'createdAt': FieldValue.serverTimestamp()});
+
+  Stream<List<DayRequest>> myDayRequests(String uid) =>
+      _dayRequests.where('customerId', isEqualTo: uid).snapshots().map(_toDayRequests);
+
+  /// Todas las sugerencias de días. Solo el dueño.
+  Stream<List<DayRequest>> allDayRequests() => _dayRequests.snapshots().map(_toDayRequests);
+
+  /// La borra el cliente (ya no la quiere) o el dueño.
+  Future<void> deleteDayRequest(String id) => _dayRequests.doc(id).delete();
+
+  /// Solo el dueño: ya las vio, o ya les avisó que abrió el día.
+  Future<void> markDayRequests(Iterable<String> ids, {bool? seen, bool? notified}) async {
+    final list = ids.toList();
+    for (var i = 0; i < list.length; i += 400) {
+      final batch = _db.batch();
+      for (final id in list.skip(i).take(400)) {
+        batch.update(_dayRequests.doc(id), {'seen': ?seen, 'notified': ?notified});
       }
       await batch.commit();
     }

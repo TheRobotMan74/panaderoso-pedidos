@@ -752,3 +752,75 @@ DateTime? _toDate(Object? v) {
     return null;
   }
 }
+
+/// Un cliente sugiere un día y una hora aproximada para que se abra entrega
+/// (cuando no hay días abiertos o ninguno le acomoda). Una por cliente por día:
+/// el id es `<uid>_<fecha>`, así que si la vuelve a mandar se actualiza.
+class DayRequest {
+  final String id;
+  final String customerId;
+  final String customerName;
+
+  /// AAAA-MM-DD.
+  final String date;
+
+  /// Franja aproximada (ver requestBands en logic/day_requests.dart).
+  final String band;
+
+  /// Dónde lo quiere: '' = a su domicilio; si no, el nombre de un lugar (FIME, Acuity…).
+  final String place;
+
+  /// Qué pan y cuántas piezas le gustaría (nombre → piezas). Puede ir vacío.
+  final Map<String, int> items;
+  final String note;
+  final DateTime? createdAt;
+  final bool seen;
+
+  /// El dueño ya le avisó que abrió ese día.
+  final bool notified;
+
+  const DayRequest({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.date,
+    required this.band,
+    this.place = '',
+    this.items = const {},
+    this.note = '',
+    this.createdAt,
+    this.seen = false,
+    this.notified = false,
+  });
+
+  static String idFor(String uid, String date) => '${uid}_$date';
+
+  int get pieces => items.values.fold(0, (a, b) => a + b);
+
+  factory DayRequest.fromMap(String id, Map<String, dynamic> m) => DayRequest(
+        id: id,
+        customerId: m['customerId'] as String? ?? '',
+        customerName: m['customerName'] as String? ?? '',
+        date: m['date'] as String? ?? '',
+        band: m['band'] as String? ?? '',
+        place: m['place'] as String? ?? '',
+        items: _intMap(m['items']),
+        note: m['note'] as String? ?? '',
+        createdAt: _toDate(m['createdAt']),
+        seen: m['seen'] as bool? ?? false,
+        notified: m['notified'] as bool? ?? false,
+      );
+
+  /// Lo que guarda el cliente (createdAt lo pone el servidor).
+  Map<String, dynamic> toMap() => {
+        'customerId': customerId,
+        'customerName': customerName,
+        'date': date,
+        'band': band,
+        'place': place,
+        'items': items,
+        'note': note,
+        'seen': false,
+        'notified': false,
+      };
+}

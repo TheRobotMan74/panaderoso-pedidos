@@ -17,6 +17,7 @@ import '../promo_widgets.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'day_request_sheet.dart';
 import 'addresses.dart';
 
 /// Confirmar pedido: día, horario, forma de pago y captura de transferencia.
@@ -123,6 +124,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
     }
   }
+
+  /// Sugerir otro día, con lo que trae en el carrito como el pan que quiere.
+  void _suggestDay() => showDayRequestSheet(
+        context,
+        widget.user,
+        items: {for (final i in widget.cart.items) i.name: i.qty},
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -355,12 +363,23 @@ class _CheckoutPageState extends State<CheckoutPage> {
         // ----- Día y horario -----
         const SectionTitle('¿Qué día lo quieres?'),
         if (days.isEmpty)
-          const PanCard(
-            child: Row(
+          PanCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('🗓️', style: TextStyle(fontSize: 28)),
-                SizedBox(width: 12),
-                Expanded(child: Text('Por ahora no hay días de entrega abiertos. Vuelve pronto.')),
+                const Row(
+                  children: [
+                    Text('🗓️', style: TextStyle(fontSize: 28)),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('Por ahora no hay días de entrega abiertos.')),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _suggestDay,
+                  icon: const Icon(Icons.edit_calendar_rounded),
+                  label: const Text('Sugerir un día y hora'),
+                ),
               ],
             ),
           )
@@ -385,6 +404,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   }),
                 ),
               ),
+            ),
+          ),
+        if (days.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _suggestDay,
+              icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+              label: const Text('¿Ningún día te acomoda? Sugiere uno'),
             ),
           ),
         AnimatedSize(

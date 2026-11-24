@@ -1028,7 +1028,7 @@ exports.mandarMensaje = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req
 // ---------------------------------------------------------------------------
 // Borrar la cuenta (lo pide Google Play: el cliente la puede borrar desde la app).
 // Se borra: la cuenta (correo y contraseña), sus datos (nombre, teléfono, direcciones,
-// avisos), sus reseñas, sus ideas de pan y sus fotos (reseñas y capturas de pago).
+// avisos), sus reseñas, sus ideas de pan, los días que sugirió y sus fotos (reseñas y capturas de pago).
 // Se queda, sin nombre ni teléfono ni dirección: lo vendido en sus pedidos pasados
 // (panes, montos y fecha) para las cuentas de la panadería, y la marca de "ya recibió
 // el pan de bienvenida" de su domicilio para que la promoción no se repita.
@@ -1064,7 +1064,7 @@ exports.borrarCuenta = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req)
       cuentaBorrada: true,
     });
   }
-  for (const col of ['reviews', 'suggestions']) {
+  for (const col of ['reviews', 'suggestions', 'dayRequests']) {
     const docs = await db.collection(col).where('customerId', '==', uid).get();
     docs.forEach((d) => escritor.delete(d.ref));
   }

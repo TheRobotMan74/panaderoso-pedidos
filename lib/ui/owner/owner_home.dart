@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 
+import '../../logic/day_requests.dart';
 import '../../models.dart';
+import '../../services/repo.dart';
 import '../widgets.dart';
 import 'calendar_page.dart';
 import 'delivery_banner.dart';
@@ -25,6 +27,11 @@ class OwnerHome extends StatefulWidget {
 class _OwnerHomeState extends State<OwnerHome> {
   int _tab = 0;
   late final _newFeedback = unseenFeedbackCount();
+  late final _newDayRequests = Repo.instance
+      .allDayRequests()
+      .map((l) => unseenRequests(l, DateTime.now()))
+      .handleError((_) {})
+      .asBroadcastStream();
 
   static const _titles = ['Pedidos', 'Demanda', 'Días de entrega', 'Productos', 'Ajustes'];
 
@@ -64,22 +71,22 @@ class _OwnerHomeState extends State<OwnerHome> {
                   label: Text('$n'),
                   child: const Icon(Icons.reviews_rounded),
                 ),
-                onPressed: () => Navigator.of(context)
-                    .push(MaterialPageRoute<void>(builder: (_) => const FeedbackPage())),
+                onPressed: () =>
+                    Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const FeedbackPage())),
               );
             },
           ),
           IconButton(
             tooltip: 'Clientes',
             icon: const Icon(Icons.person_outline_rounded),
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute<void>(builder: (_) => const CustomersPage())),
+            onPressed: () =>
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const CustomersPage())),
           ),
           IconButton(
             tooltip: 'Mandar mensaje a clientes',
             icon: const Icon(Icons.chat_rounded),
-            onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute<void>(builder: (_) => const SendMessagePage())),
+            onPressed: () =>
+                Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SendMessagePage())),
           ),
           IconButton(
             tooltip: 'Cerrar sesión',
@@ -106,19 +113,46 @@ class _OwnerHomeState extends State<OwnerHome> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined), selectedIcon: Icon(Icons.receipt_long), label: 'Pedidos'),
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
+              icon: Icon(Icons.receipt_long_outlined),
+              selectedIcon: Icon(Icons.receipt_long),
+              label: 'Pedidos'),
+          const NavigationDestination(
               icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: 'Demanda'),
+          // Numerito cuando hay clientes nuevos sugiriendo días.
           NavigationDestination(
-              icon: Icon(Icons.calendar_month_outlined), selectedIcon: Icon(Icons.calendar_month), label: 'Días'),
-          NavigationDestination(
-              icon: Icon(Icons.bakery_dining_outlined), selectedIcon: Icon(Icons.bakery_dining), label: 'Productos'),
-          NavigationDestination(
+            icon: _DaysIcon(stream: _newDayRequests, selected: false),
+            selectedIcon: _DaysIcon(stream: _newDayRequests, selected: true),
+            label: 'Días',
+          ),
+          const NavigationDestination(
+              icon: Icon(Icons.bakery_dining_outlined),
+              selectedIcon: Icon(Icons.bakery_dining),
+              label: 'Productos'),
+          const NavigationDestination(
               icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Ajustes'),
         ],
       ),
     );
   }
+}
+
+class _DaysIcon extends StatelessWidget {
+  final Stream<int> stream;
+  final bool selected;
+  const _DaysIcon({required this.stream, required this.selected});
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<int>(
+        stream: stream,
+        builder: (context, snap) {
+          final n = snap.data ?? 0;
+          return Badge(
+            isLabelVisible: n > 0,
+            label: Text('$n'),
+            child: Icon(selected ? Icons.calendar_month : Icons.calendar_month_outlined),
+          );
+        },
+      );
 }
