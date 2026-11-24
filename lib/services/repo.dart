@@ -219,6 +219,53 @@ class Repo {
         SetOptions(merge: true),
       );
 
+  /// Día especial: avisa a los clientes del día que ya llegaste al punto de entrega
+  /// (la función avisoLlegadaPunto manda la notificación una sola vez).
+  Future<void> markArrivedAtPickup(String date) =>
+      _db.collection('deliveryDays').doc(date).set({'llegue': true}, SetOptions(merge: true));
+
+  /// Lugares de entrega frecuentes (FIME, …) para no marcarlos cada vez.
+  /// Van en su propio documento para que guardar Ajustes no los borre.
+  Stream<List<PickupPoint>> pickupPoints() => _db
+      .collection('config')
+      .doc('puntos')
+      .snapshots()
+      .map((s) => [
+            for (final p in (s.data()?['lista'] as List? ?? const []))
+              ?PickupPoint.fromMap(p),
+          ]);
+
+  /// Guarda (o actualiza, por nombre) un lugar frecuente.
+  Future<void> savePickupPoint(PickupPoint p) async {
+    final ref = _db.collection('config').doc('puntos');
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final list = [
+        for (final x in (snap.data()?['lista'] as List? ?? const []))
+          if (PickupPoint.fromMap(x) case final q? when !q.sameAs(p)) q,
+        p,
+      ];
+      tx.set(ref, {'lista': [for (final q in list) q.toMap()]});
+    });
+  }
+
+  Future<void> removePickupPoint(PickupPoint p) async {
+    final ref = _db.collection('config').doc('puntos');
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final list = [
+        for (final x in (snap.data()?['lista'] as List? ?? const []))
+          if (PickupPoint.fromMap(x) case final q? when !q.sameAs(p)) q.toMap(),
+      ];
+      tx.set(ref, {'lista': list});
+    });
+  }
+
+  /// Cambia el lugar de entrega de un día que todavía no tiene pedidos
+  /// (null = vuelve a ser a domicilio).
+  Future<void> setDayPickup(String date, PickupPoint? p) =>
+      _db.collection('deliveryDays').doc(date).update({'punto': p?.toMap()});
+
   Future<void> deleteDeliveryDay(String date) =>
       _db.collection('deliveryDays').doc(date).delete();
 

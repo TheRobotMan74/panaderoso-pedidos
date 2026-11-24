@@ -298,7 +298,7 @@ class _SettingsFormState extends State<_SettingsForm> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Pan gratis en el primer pedido'),
-          subtitle: const Text('Uno por cuenta y uno por domicilio'),
+          subtitle: const Text('Uno por cuenta y uno por domicilio. No aplica en días especiales'),
           value: _welcomeOn,
           onChanged: (v) => setState(() => _welcomeOn = v),
         ),

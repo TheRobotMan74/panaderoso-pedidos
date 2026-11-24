@@ -12,6 +12,7 @@ import '../format.dart';
 import '../product_image.dart';
 import '../promo_widgets.dart';
 import '../profile_page.dart';
+import '../pickup_widgets.dart';
 import '../push_reminder.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
@@ -391,12 +392,37 @@ class _Welcome extends StatelessWidget {
           ReviewPrompt(user: user),
           LoyaltyCardView(uid: user.uid),
           const _NextDayStock(),
+          const _PickupDays(),
           const SizedBox(height: 6),
           const SectionTitle('Nuestro pan'),
         ],
       ),
     );
   }
+}
+
+/// Días especiales que vienen: "Viernes 28: entrega en FIME, no a domicilio".
+class _PickupDays extends StatelessWidget {
+  const _PickupDays();
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<DeliveryDay>>(
+        stream: Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())),
+        builder: (context, snap) {
+          final days = upcomingPickupDays(snap.data ?? const [], DateTime.now());
+          return AnimatedSize(
+            duration: Motion.of(context, Motion.medio),
+            curve: Motion.curva,
+            alignment: Alignment.topCenter,
+            child: Column(
+              children: [
+                for (final d in days.take(3))
+                  PickupDayNotice(day: d, margin: const EdgeInsets.only(top: 12)),
+              ],
+            ),
+          );
+        },
+      );
 }
 
 /// Contador en vivo del próximo día de entrega: "Para el lunes 23 quedan 40 panes".

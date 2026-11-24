@@ -190,7 +190,7 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
         Marker(
           markerId: const MarkerId('casa'),
           position: home,
-          infoWindow: const InfoWindow(title: 'Tu casa'),
+          infoWindow: InfoWindow(title: _order.isPickup ? _order.pickupName : 'Tu casa'),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
         ),
       if (driver != null)
@@ -367,6 +367,13 @@ TrackingView trackingView({
   if (order.status == OrderStatus.cancelado) {
     return const TrackingView('Este pedido se canceló', []);
   }
+  // Día especial: todos se entregan en el mismo lugar.
+  if (order.isPickup && order.arrivalNotified) {
+    return TrackingView('¡Ya estamos en ${order.pickupName}!', [
+      'Pasa por tu pedido. Tu horario: ${slotLabel(order.slot, minutes: order.slotMinutes)}.',
+    ], live: true);
+  }
+
   if (info == null) return const TrackingView('Buscando al repartidor…', []);
   if (!(info.active && info.hasPosition)) {
     return TrackingView('El repartidor todavía no sale', [
@@ -391,8 +398,9 @@ TrackingView trackingView({
   } else {
     title = meters == null ? 'Tu pan va en camino' : 'Tu pan está a ${distanceLabel(meters)}';
   }
+  if (order.isPickup) lines.insert(0, 'Va rumbo a ${order.pickupName}.');
 
-  if (ahead != null) {
+  if (ahead != null && !order.isPickup) {
     lines.add(
       ahead == 0
           ? '¡Tu entrega es la siguiente!'

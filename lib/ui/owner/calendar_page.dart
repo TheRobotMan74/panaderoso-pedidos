@@ -10,6 +10,7 @@ import '../format.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'pickup_point_fields.dart';
 
 /// Días de entrega: el dueño abre días con sus horarios y su cupo de panes.
 /// Se puede pedir hasta que el dueño pica "Empezar a repartir" ese día
@@ -158,6 +159,28 @@ class _DayTile extends StatelessWidget {
         builder: (_) => _StockSheet(day: day, allDays: allDays, groups: groups, stock: stock),
       );
 
+  void _editPickup(BuildContext context) {
+    if (pendingOrders > 0) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Este día ya tiene pedidos'),
+          content: Text(
+            'Hay $pendingOrders ${pendingOrders == 1 ? 'pedido' : 'pedidos'} con su lugar de entrega ya puesto. '
+            'Para cambiar a dónde entregas, primero mueve o cancela esos pedidos.',
+          ),
+          actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('Entendido'))],
+        ),
+      );
+      return;
+    }
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => _PickupSheet(day: day),
+    );
+  }
+
   void _move(BuildContext context) => showModalBottomSheet<void>(
         context: context,
         isScrollControlled: true,
@@ -257,6 +280,10 @@ class _DayTile extends StatelessWidget {
                             : '$_hours · $pendingOrders ${pendingOrders == 1 ? 'pedido' : 'pedidos'}',
                         style: theme.textTheme.bodyMedium,
                       ),
+                      if (day.pickup != null)
+                        Text('📍 Especial: entrega en ${day.pickup!.name}',
+                            style: theme.textTheme.bodySmall!
+                                .copyWith(color: Pan.caramelo, fontWeight: FontWeight.w800)),
                       Text(
                         day.closed
                             ? 'Repartiendo · pedidos cerrados'
@@ -281,6 +308,7 @@ class _DayTile extends StatelessWidget {
                   onSelected: (v) => switch (v) {
                     'cupo' => _editStock(context),
                     'mover' => _move(context),
+                    'lugar' => _editPickup(context),
                     _ => _delete(context),
                   },
                   itemBuilder: (_) => const [
@@ -291,6 +319,10 @@ class _DayTile extends StatelessWidget {
                     PopupMenuItem(
                       value: 'mover',
                       child: ListTile(leading: Icon(Icons.edit_calendar_rounded), title: Text('Mover o editar')),
+                    ),
+                    PopupMenuItem(
+                      value: 'lugar',
+                      child: ListTile(leading: Icon(Icons.location_on_rounded), title: Text('Lugar de entrega')),
                     ),
                     PopupMenuItem(
                       value: 'quitar',
@@ -730,6 +762,67 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
 
 /// Abrir varios días de golpe, por ejemplo lunes, miércoles y viernes de 8 a 11,
 /// con su cupo de panes.
+/// Cambiar un día ya abierto (sin pedidos) entre "a domicilio" y "especial".
+class _PickupSheet extends StatefulWidget {
+  final DeliveryDay day;
+  const _PickupSheet({required this.day});
+
+  @override
+  State<_PickupSheet> createState() => _PickupSheetState();
+}
+
+class _PickupSheetState extends State<_PickupSheet> {
+  final _key = GlobalKey<PickupPointFieldsState>();
+  late PickupPoint? _point = widget.day.pickup;
+  late bool _special = widget.day.pickup != null;
+  bool _busy = false;
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      final p = _special ? _point : null;
+      if (p != null && _key.currentState?.remember == true) {
+        await Repo.instance.savePickupPoint(p).catchError((_) {});
+      }
+      await Repo.instance.setDayPickup(widget.day.date, p);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo guardar ($e)')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Lugar de entrega', style: Theme.of(context).textTheme.headlineSmall),
+              Text(capitalize(dayLabel(widget.day.date)), style: Theme.of(context).textTheme.bodyMedium),
+              const SizedBox(height: 10),
+              PickupPointFields(
+                key: _key,
+                initial: widget.day.pickup,
+                onChanged: (p) => setState(() => _point = p),
+                onModeChanged: (v) => setState(() => _special = v),
+              ),
+              const SizedBox(height: 12),
+              HoneyButton(
+                label: 'Guardar',
+                icon: Icons.check_rounded,
+                busy: _busy,
+                onPressed: _busy || (_special && _point == null) ? null : _save,
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 class _OpenDaysSheet extends StatefulWidget {
   final List<StockGroup> groups;
   const _OpenDaysSheet({required this.groups});
@@ -747,6 +840,11 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
   int _every = 60;
   bool _busy = false;
   late final _stock = {for (final g in widget.groups) g.key: TextEditingController()};
+  final _pointKey = GlobalKey<PickupPointFieldsState>();
+
+  /// Día especial: entrega en un solo lugar (null = a domicilio o falta completar).
+  PickupPoint? _point;
+  bool _special = false;
 
   @override
   void dispose() {
@@ -769,22 +867,50 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
   Future<void> _save() async {
     setState(() => _busy = true);
     final stock = _readStock(_stock);
+    final point = _special ? _point : null;
+    if (point != null && _pointKey.currentState?.remember == true) {
+      await Repo.instance.savePickupPoint(point).catchError((_) {});
+    }
+    // Un día que ya tiene pedidos no cambia de "a domicilio" a "especial" (o al revés):
+    // esos pedidos ya traen su dirección.
+    final today = dateKey(DateTime.now());
+    final existing = {for (final d in await Repo.instance.deliveryDays(fromDate: today).first) d.date: d};
+    final pending = {
+      for (final o in await Repo.instance.ordersFrom(today).first)
+        if (o.isPending) o.deliveryDate,
+    };
+    final skipped = <String>[];
     for (final date in _dates) {
+      final before = existing[date];
+      if (before != null && pending.contains(date) && before.pickup?.name != point?.name) {
+        skipped.add(date);
+        continue;
+      }
       await Repo.instance.saveDeliveryDay(DeliveryDay(
         date: date,
         open: true,
         slots: slotsBetween(_start, _end, _every),
         slotMinutes: _every,
+        pickup: point,
       ));
       if (stock.isNotEmpty) await Repo.instance.setDayStock(date, stock);
     }
-    if (mounted) Navigator.pop(context);
+    if (!mounted) return;
+    if (skipped.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('No cambié ${skipped.map(dayLabel).join(', ')}: ya '
+            '${skipped.length == 1 ? 'tiene' : 'tienen'} pedidos con otro lugar de entrega.'),
+      ));
+    }
+    Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     final dates = _dates;
-    final valid = slotsBetween(_start, _end, _every).isNotEmpty && dates.isNotEmpty;
+    final valid = slotsBetween(_start, _end, _every).isNotEmpty &&
+        dates.isNotEmpty &&
+        (!_special || _point != null);
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
@@ -830,6 +956,12 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
                 _every = every;
               }),
             ),
+            const SizedBox(height: 8),
+            PickupPointFields(
+              key: _pointKey,
+              onChanged: (p) => setState(() => _point = p),
+              onModeChanged: (v) => setState(() => _special = v),
+            ),
             if (widget.groups.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text('Cupo de panes por día (opcional)', style: Theme.of(context).textTheme.titleSmall),
@@ -840,7 +972,9 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
             Text(
               dates.isEmpty
                   ? 'Elige al menos un día.'
-                  : 'Se abren ${dates.length} días. '
+                  : _special && _point == null
+                      ? 'Escribe el nombre del lugar y márcalo en el mapa.'
+                  : 'Se abren ${dates.length} días${_point != null ? ' de entrega en ${_point!.name}' : ''}. '
                       'Se puede pedir hasta que empieces a repartir o se acabe el cupo.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
