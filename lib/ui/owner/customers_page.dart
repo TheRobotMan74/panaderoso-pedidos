@@ -130,14 +130,19 @@ class _CustomersPageState extends State<CustomersPage> {
                 message: 'Aquí vas a ver a cada quien en cuanto se registre en la app.',
               );
             }
-            return _body(context, all);
+            // Días especiales: el chip dice el lugar ("📍 FIME · vie 28").
+            final pickupByDate = {
+              for (final o in oSnap.data!)
+                if (o.isPickup) o.deliveryDate: o.pickupName!,
+            };
+            return _body(context, all, pickupByDate);
           },
         ),
       ),
     );
   }
 
-  Widget _body(BuildContext context, List<CustomerSummary> all) {
+  Widget _body(BuildContext context, List<CustomerSummary> all, Map<String, String> pickupByDate) {
     final theme = Theme.of(context);
     final now = DateTime.now();
     final days = pendingDays(all, dateKey(now));
@@ -183,7 +188,10 @@ class _CustomersPageState extends State<CustomersPage> {
                     if (noPush.isNotEmpty)
                       _chip('🔕 Sin avisos (${noPush.length})', _filter is _NoPush, const _NoPush()),
                     for (final (date, n) in days)
-                      _chip('Pedido ${shortDayChip(date, now).toLowerCase()} ($n)',
+                      _chip(
+                          pickupByDate[date] != null
+                              ? '📍 ${pickupByDate[date]} · ${shortDayChip(date, now).toLowerCase()} ($n)'
+                              : 'Pedido ${shortDayChip(date, now).toLowerCase()} ($n)',
                           f is _Day && f.date == date, _Day(date)),
                   ],
                 ),
