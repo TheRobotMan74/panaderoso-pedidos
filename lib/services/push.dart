@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
+import 'package:material_ui/material_ui.dart';
+
+import '../ui/theme.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../models.dart';
@@ -32,6 +34,12 @@ class Push {
   static StreamSubscription<String>? _tokenRefresh;
   static AppLifecycleListener? _lifecycle;
   static Future<void>? _checking;
+  static StreamSubscription<RemoteMessage>? _foreground;
+  static Timer? _bannerTimer;
+
+  /// Para mostrar el aviso arriba de la pantalla si llega con la app abierta
+  /// (Android no lo muestra solo cuando la app está en pantalla).
+  static final messengerKey = GlobalKey<ScaffoldMessengerState>();
 
   /// Lo último que quedó guardado en la cuenta ('uid|token|ok') y cuándo, para no
   /// escribir en cada regreso a la app (pero sí de vez en cuando, por si se borró).
@@ -51,6 +59,7 @@ class Push {
       _savedKey = null;
       refresh().catchError((_) {});
     });
+    _foreground ??= FirebaseMessaging.onMessage.listen(_showInApp);
     if (!kIsWeb) {
       // Cada paso por separado: si uno falla (por ejemplo, Android ya está
       // mostrando el permiso de ubicación), los demás siguen.
@@ -125,6 +134,37 @@ class Push {
         await Future<void>.delayed(Duration(seconds: 5 * (i + 1)));
       }
     }
+  }
+
+  /// Aviso que llegó con la app abierta: ventanita arriba por unos segundos.
+  static void _showInApp(RemoteMessage m) {
+    final n = m.notification;
+    final messenger = messengerKey.currentState;
+    if (n == null || messenger == null) return;
+    final title = n.title ?? 'Panaderoso';
+    final body = n.body ?? '';
+    messenger.clearMaterialBanners();
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: Pan.mielClara,
+        leading: const Icon(Icons.notifications_active_rounded, color: Pan.caramelo),
+        content: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(text: title, style: const TextStyle(fontWeight: FontWeight.w800)),
+              if (body.isNotEmpty) TextSpan(text: '\n$body'),
+            ],
+          ),
+          style: const TextStyle(color: Pan.cacao),
+        ),
+        actions: [
+          TextButton(onPressed: messenger.hideCurrentMaterialBanner, child: const Text('OK')),
+        ],
+      ),
+    );
+    _bannerTimer?.cancel();
+    _bannerTimer =
+        Timer(const Duration(seconds: 8), () => messengerKey.currentState?.hideCurrentMaterialBanner());
   }
 
   /// Botón "Activar": pide el permiso. Regresa true si quedaron prendidas.
