@@ -86,6 +86,47 @@ class _ProfilePageState extends State<ProfilePage> {
     if (widget.editing) Navigator.pop(context);
   }
 
+  /// Borra la cuenta y sus datos para siempre (Google Play pide que se pueda desde la app).
+  Future<void> _deleteAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Borrar tu cuenta?'),
+        content: const Text('Se borran para siempre tu cuenta, tus datos, tus direcciones, '
+            'tus reseñas y tus fotos. Tus puntos de la tarjeta de lealtad también se pierden.\n\n'
+            'Si luego quieres volver a pedir, tendrás que crear una cuenta nueva.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(ctx).colorScheme.error),
+            child: const Text('Sí, borrar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+    try {
+      await Repo.instance.deleteMyAccount();
+      await signOutAndForgetPush();
+      nav.popUntil((r) => r.isFirst);
+      messenger.showSnackBar(
+          const SnackBar(content: Text('Listo, tu cuenta se borró. ¡Gracias por tu preferencia!')));
+    } on RejectedByServer catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      messenger.showSnackBar(const SnackBar(
+          content: Text('No se pudo borrar la cuenta. Revisa tu internet e intenta otra vez.')));
+    }
+  }
+
   String? _required(String? v) => (v == null || v.trim().isEmpty) ? 'Falta este dato' : null;
 
   @override
@@ -127,8 +168,8 @@ class _ProfilePageState extends State<ProfilePage> {
             TextFormField(
               controller: _name,
               validator: _required,
-              decoration: const InputDecoration(
-                  labelText: 'Nombre', prefixIcon: Icon(Icons.person_outline_rounded)),
+              decoration:
+                  const InputDecoration(labelText: 'Nombre', prefixIcon: Icon(Icons.person_outline_rounded)),
             ),
             const SizedBox(height: 12),
             TextFormField(
@@ -142,28 +183,28 @@ class _ProfilePageState extends State<ProfilePage> {
               const SectionTitle('Mis direcciones'),
               AddressesSection(uid: widget.uid),
             ] else ...[
-            const SectionTitle('Tu casa en el mapa'),
-            HomeMapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _address,
-              validator: _required,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Dirección: calle, número y colonia',
-                helperText: 'Se llena sola al marcar el mapa; corrígela si hace falta',
-                prefixIcon: Icon(Icons.home_outlined),
+              const SectionTitle('Tu casa en el mapa'),
+              HomeMapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _address,
+                validator: _required,
+                maxLines: 2,
+                decoration: const InputDecoration(
+                  labelText: 'Dirección: calle, número y colonia',
+                  helperText: 'Se llena sola al marcar el mapa; corrígela si hace falta',
+                  prefixIcon: Icon(Icons.home_outlined),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _notes,
-              decoration: const InputDecoration(
-                labelText: 'Referencias (opcional)',
-                hintText: 'Ej. portón negro, tocar el timbre',
-                prefixIcon: Icon(Icons.sticky_note_2_outlined),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _notes,
+                decoration: const InputDecoration(
+                  labelText: 'Referencias (opcional)',
+                  hintText: 'Ej. portón negro, tocar el timbre',
+                  prefixIcon: Icon(Icons.sticky_note_2_outlined),
+                ),
               ),
-            ),
             ],
             const SizedBox(height: 24),
             HoneyButton(
@@ -172,6 +213,17 @@ class _ProfilePageState extends State<ProfilePage> {
               busy: _busy,
               onPressed: _save,
             ),
+            if (widget.editing && !_isOwner && widget.existing != null) ...[
+              const SizedBox(height: 32),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _busy ? null : _deleteAccount,
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  label: const Text('Borrar mi cuenta'),
+                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -241,15 +293,15 @@ class HomeMapPreview extends StatelessWidget {
             if (!mapsUsable)
               MapFallback(message: 'Casa marcada (${lat!.toStringAsFixed(5)}, ${lng!.toStringAsFixed(5)})')
             else
-            GoogleMap(
-              // Modo ligero: una imagen fija del mapa, gasta menos.
-              liteModeEnabled: true,
-              initialCameraPosition: CameraPosition(target: at, zoom: 16),
-              markers: {Marker(markerId: const MarkerId('casa'), position: at)},
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              onTap: (_) => onTap(),
-            ),
+              GoogleMap(
+                // Modo ligero: una imagen fija del mapa, gasta menos.
+                liteModeEnabled: true,
+                initialCameraPosition: CameraPosition(target: at, zoom: 16),
+                markers: {Marker(markerId: const MarkerId('casa'), position: at)},
+                zoomControlsEnabled: false,
+                mapToolbarEnabled: false,
+                onTap: (_) => onTap(),
+              ),
             Positioned(
               right: 8,
               bottom: 8,

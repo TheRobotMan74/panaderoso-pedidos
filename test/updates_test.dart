@@ -18,6 +18,12 @@ void main() {
       );
     });
 
+    test('reconoce cuando la instaló Google Play', () {
+      expect(Updates.isPlayInstaller('com.android.vending'), isTrue);
+      expect(Updates.isPlayInstaller('com.google.android.packageinstaller'), isFalse);
+      expect(Updates.isPlayInstaller(null), isFalse);
+    });
+
     test('texto de la versión', () {
       expect(Updates.label(25, null), 'Versión 25');
       expect(Updates.label(25, 2), 'Versión 25 · mejora 2');
