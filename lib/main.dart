@@ -103,6 +103,7 @@ class PanaderosoApp extends StatelessWidget {
     return MaterialApp(
       title: 'Panaderoso',
       debugShowCheckedModeBanner: false,
+      scaffoldMessengerKey: Push.messengerKey,
       theme: buildPanTheme(),
       home: _firebaseReady
           ? const AuthGate()
