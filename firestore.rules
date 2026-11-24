@@ -137,6 +137,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.open == true
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('closed', false) == false
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('stock', {}).size() == 0
+        // Días especiales (entrega en un punto) solo por hacerPedido.
+        && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('punto', null) == null
         && request.time < timestamp.date(
              int(request.resource.data.deliveryDate.split('-')[0]),
              int(request.resource.data.deliveryDate.split('-')[1]),

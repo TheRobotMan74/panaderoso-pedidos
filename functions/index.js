@@ -82,8 +82,10 @@ exports.avisoSalidaReparto = onDocumentWritten('tracking/current', async (event)
 
   const db = getFirestore();
   const dia = db.collection('deliveryDays').doc(t.date);
+  let punto = null;
   const yaAvisado = await db.runTransaction(async (tx) => {
     const d = await tx.get(dia);
+    punto = puntoDelDia(d);
     if (d.exists && d.get('salidaAvisada') === true) return true;
     tx.set(dia, { salidaAvisada: true }, { merge: true });
     return false;
@@ -95,8 +97,10 @@ exports.avisoSalidaReparto = onDocumentWritten('tracking/current', async (event)
     .where('status', 'in', PENDIENTES)
     .get();
   const clientes = [...new Set(pedidos.docs.map((d) => d.get('customerId')).filter(Boolean))];
-  await Promise.all(clientes.map((uid) => avisarCliente(uid, '¡Ya salimos a repartir! 🥐',
-    'Tu pan va en camino. Toca para ver en el mapa por dónde va.').catch((e) => logger.warn('aviso salida', uid, e))));
+  const cuerpo = punto
+    ? `Vamos en camino a ${punto.name} con tu pan. Toca para ver en el mapa por dónde vamos.`
+    : 'Tu pan va en camino. Toca para ver en el mapa por dónde va.';
+  await Promise.all(clientes.map((uid) => avisarCliente(uid, '¡Ya salimos a repartir! 🥐', cuerpo).catch((e) => logger.warn('aviso salida', uid, e))));
   logger.info('aviso salida', { dia: t.date, clientes: clientes.length });
 });
 
@@ -115,6 +119,19 @@ exports.avisoRepartidorCerca = onDocumentUpdated('tracking/current', async (even
 
   for (const doc of pedidos.docs) {
     const o = doc.data();
+    if (o.puntoEntrega) {
+      // Día especial: "ya casi llego" y, al estar en el lugar, "ya llegué".
+      if (o.llegadaAvisada || typeof o.lat !== 'number' || typeof o.lng !== 'number') continue;
+      const m = distanciaMetros(t.lat, t.lng, o.lat, o.lng);
+      if (m <= LLEGADA_METROS) {
+        await avisarLlegada(t.date);
+      } else if (m <= radio && !o.nearNotified) {
+        await doc.ref.update({ nearNotified: true });
+        await avisarCliente(o.customerId, `¡Ya casi llegamos a ${o.puntoEntrega}! 🥐`,
+          `Estamos muy cerca de ${o.puntoEntrega}. Ve preparándote para recoger tu pan.`);
+      }
+      continue;
+    }
     if (o.nearNotified) continue;
     let { lat, lng } = o;
     if (typeof lat !== 'number' || typeof lng !== 'number') {
@@ -132,6 +149,58 @@ exports.avisoRepartidorCerca = onDocumentUpdated('tracking/current', async (even
     await avisarCliente(o.customerId, '¡Tu pan está por llegar! 🥐',
       'El repartidor ya está muy cerca de tu casa. Ve preparándote para recibirlo.');
   }
+});
+
+// ---------------------------------------------------------------------------
+// Días especiales: entrega en un solo lugar (FIME, …)
+// ---------------------------------------------------------------------------
+// deliveryDays/{fecha}.punto = { name, lat, lng, notes }. Los pedidos de ese día
+// llevan la ubicación del lugar, `puntoEntrega` con su nombre, envío 0 y sin pan
+// de bienvenida (sí cuentan para la tarjeta de lealtad).
+
+// A cuántos metros del lugar se considera que ya llegó el repartidor.
+const LLEGADA_METROS = 150;
+
+function puntoDelDia(dia) {
+  const p = dia && dia.exists ? dia.get('punto') : null;
+  if (!p || typeof p !== 'object') return null;
+  const name = texto(p.name, 80);
+  if (!name || typeof p.lat !== 'number' || typeof p.lng !== 'number') return null;
+  return { name, lat: p.lat, lng: p.lng, notes: texto(p.notes, 300) };
+}
+
+// "Ya llegué a FIME": a cada cliente del día con pedido pendiente, una sola vez.
+async function avisarLlegada(date) {
+  const db = getFirestore();
+  const pedidos = await db.collection('orders')
+    .where('deliveryDate', '==', date)
+    .where('status', 'in', PENDIENTES)
+    .get();
+  const avisar = [];
+  for (const doc of pedidos.docs) {
+    const o = doc.data();
+    if (!o.puntoEntrega) continue;
+    // Marcar en transacción para no mandar dos veces el mismo aviso.
+    const toca = await db.runTransaction(async (tx) => {
+      const d = await tx.get(doc.ref);
+      if (!d.exists || d.get('llegadaAvisada') === true) return false;
+      tx.update(doc.ref, { llegadaAvisada: true, nearNotified: true });
+      return true;
+    });
+    if (toca) avisar.push(o);
+  }
+  await db.collection('deliveryDays').doc(date).set({ llegue: true }, { merge: true });
+  await Promise.all(avisar.map((o) => avisarCliente(o.customerId, `¡Ya llegamos a ${o.puntoEntrega}! 📍`,
+    `Tu pan ya está en ${o.puntoEntrega}. Pasa a recogerlo.`).catch((e) => logger.warn('aviso llegada', o.customerId, e))));
+  logger.info('aviso llegada', { dia: date, clientes: avisar.length });
+}
+
+// El dueño le picó "Ya llegué" en la app.
+exports.avisoLlegadaPunto = onDocumentUpdated('deliveryDays/{date}', async (event) => {
+  const antes = event.data?.before.data();
+  const despues = event.data?.after.data();
+  if (!despues || despues.llegue !== true || (antes && antes.llegue === true)) return;
+  await avisarLlegada(event.params.date);
 });
 
 async function avisarCliente(uid, title, body) {
@@ -337,6 +406,8 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
     }
     const slots = day.get('slots') || [];
     if (!slots.includes(d.slot)) throw new HttpsError('failed-precondition', 'Ese horario ya no está disponible.');
+    // Día especial: se entrega en el lugar, no en la dirección que mande el celular.
+    const punto = puntoDelDia(day);
 
     const prods = await tx.getAll(...ids.map((id) => db.collection('products').doc(id)));
     const stock = await tx.get(stockRef);
@@ -380,14 +451,17 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
     // Piezas compradas: las que pagan, cuentan para el envío y para la tarjeta.
     const pagadas = items.reduce((s, i) => s + i.qty, 0);
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-    const shippingFee = costoEnvio(config, lat, lng, pagadas);
+    const shippingFee = punto ? 0 : costoEnvio(config, lat, lng, pagadas);
 
     // ----- Pan gratis -----
     if (regalo) {
       const activos = misPedidos.docs.filter((o) => o.get('status') !== 'cancelado');
       const quiere = { bienvenida: 0, lealtad: 0 };
       const yaTuvoBienvenida = promo.exists && promo.get('bienvenida.activa') === true;
-      if (reglas.bienvenida && activos.length === 0 && pagadas >= reglas.minimo
+      // Los pedidos de días especiales no cuentan como "ya pidió": la bienvenida
+      // se queda para su primer pedido a domicilio. Y en día especial no se da.
+      const aDomicilio = activos.filter((o) => !o.get('puntoEntrega'));
+      if (reglas.bienvenida && !punto && aDomicilio.length === 0 && pagadas >= reglas.minimo
         && !yaTuvoBienvenida && !domicilioUsado) {
         quiere.bienvenida = 1;
       }
@@ -437,8 +511,9 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
       customerId: uid,
       customerName: texto(d.customerName, 120),
       phone: texto(d.phone, 40),
-      address: direccion,
-      addressNotes: texto(d.addressNotes, 300),
+      address: punto ? `Entrega en ${punto.name}` : direccion,
+      addressNotes: punto ? punto.notes : texto(d.addressNotes, 300),
+      ...(punto ? { puntoEntrega: punto.name, llegadaAvisada: false } : {}),
       items,
       pieces,
       lealtadPiezas: pagadas,
@@ -454,8 +529,8 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
       cashCollected: false,
       status: 'recibido',
       notes: texto(d.notes, 500),
-      lat,
-      lng,
+      lat: punto ? punto.lat : lat,
+      lng: punto ? punto.lng : lng,
       nearNotified: false,
       createdAt: FieldValue.serverTimestamp(),
     });
@@ -517,6 +592,10 @@ exports.cambiarDireccion = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (
     const day = await tx.get(db.collection('deliveryDays').doc(o.deliveryDate));
     if (day.exists && day.get('closed') === true) {
       throw new HttpsError('failed-precondition', 'Ya salimos a repartir ese día. Escríbenos por WhatsApp.');
+    }
+    if (o.puntoEntrega || puntoDelDia(day)) {
+      throw new HttpsError('failed-precondition',
+        `Ese día la entrega es en ${o.puntoEntrega || 'un solo lugar'}, no a domicilio.`);
     }
     const [y, m, dd] = String(o.deliveryDate).split('-').map(Number);
     if (Date.now() >= Date.UTC(y, m - 1, dd) + 30 * 3600 * 1000) {
