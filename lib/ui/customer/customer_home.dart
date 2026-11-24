@@ -18,6 +18,7 @@ import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'checkout_page.dart';
+import 'day_request_sheet.dart';
 import 'my_orders_page.dart';
 import 'product_detail_page.dart';
 import '../../services/push.dart';
@@ -58,6 +59,8 @@ class _CustomerHomeState extends State<CustomerHome> {
       );
     } else if (v == 'idea') {
       showSuggestSheet(context, widget.user);
+    } else if (v == 'dia') {
+      showDayRequestSheet(context, widget.user);
     } else if (v == 'salir') {
       signOutAndForgetPush();
     }
@@ -85,6 +88,14 @@ class _CustomerHomeState extends State<CustomerHome> {
             offset: const Offset(0, 52),
             onSelected: _openMenu,
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'dia',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.edit_calendar_rounded),
+                  title: Text('Sugerir día y hora'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'idea',
                 child: ListTile(
@@ -310,7 +321,11 @@ class _Catalog extends StatelessWidget {
                   index: i,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [const FeaturedReviews(), SuggestBreadCard(user: user)],
+                    children: [
+                      const FeaturedReviews(),
+                      DayRequestCard(user: user),
+                      SuggestBreadCard(user: user),
+                    ],
                   ),
                 );
               }
@@ -393,12 +408,33 @@ class _Welcome extends StatelessWidget {
           LoyaltyCardView(uid: user.uid),
           const _NextDayStock(),
           const _PickupDays(),
+          _NoDaysCard(user: user),
           const SizedBox(height: 6),
           const SectionTitle('Nuestro pan'),
         ],
       ),
     );
   }
+}
+
+/// Si no hay ningún día abierto, arriba sale "Todavía no hay días abiertos: sugiere uno".
+class _NoDaysCard extends StatelessWidget {
+  final AppUser user;
+  const _NoDaysCard({required this.user});
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<DeliveryDay>>(
+        stream: Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())),
+        builder: (context, snap) {
+          final none = snap.hasData && orderableDays(snap.data!, DateTime.now()).isEmpty;
+          return AnimatedSize(
+            duration: Motion.of(context, Motion.medio),
+            curve: Motion.curva,
+            alignment: Alignment.topCenter,
+            child: none ? DayRequestCard(user: user, noDays: true) : const SizedBox(width: double.infinity),
+          );
+        },
+      );
 }
 
 /// Días especiales que vienen: "Viernes 28: entrega en FIME, no a domicilio".
