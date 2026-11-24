@@ -10,72 +10,121 @@ import '../models.dart';
 import '../web/platform.dart';
 import 'repo.dart';
 
-/// Notificaciones: guarda el token del celular, y el dueño se suscribe
-/// al tema "dueno" para enterarse de cada pedido nuevo.
-/// Quien manda los avisos es la función de functions/index.js.
+/// Notificaciones: guarda en la cuenta el "token" de este celular (la dirección a
+/// la que functions/index.js manda los avisos) y el dueño se suscribe al tema
+/// "dueno" para enterarse de cada pedido nuevo.
 ///
-/// Cada vez que la app vuelve a la pantalla se revisa si las notificaciones
-/// siguen prendidas ([enabled]); si sí, se vuelve a guardar el token por si se
-/// había perdido (antes, si fallaba guardarlo una vez, ya no llegaban avisos).
+/// Se revisa todo cada vez que se abre la app o se vuelve a ella ([refresh]):
+/// - si las notificaciones están prendidas, se vuelve a guardar el token (por si
+///   se perdió, cambió, o el servidor lo quitó porque ya no servía);
+/// - se guarda `pushOk` en la cuenta: true solo si están prendidas Y quedó
+///   guardado el token, false si están apagadas. Así el 🔕 del dueño se corrige solo.
+///
+/// Ojo: se usa el token clásico de FCM (getToken). La versión anterior guardaba el
+/// "FID" de onRegistered, que no es un token, y por eso no llegaban los avisos
+/// a los clientes de Android (el servidor los rechazaba).
 class Push {
   /// true = prendidas, false = apagadas, null = todavía no se sabe (o es la web).
   static final enabled = ValueNotifier<bool?>(null);
 
   static AppUser? _user;
   static String? _token;
-  static StreamSubscription<String>? _registered;
+  static StreamSubscription<String>? _tokenRefresh;
   static AppLifecycleListener? _lifecycle;
-  static bool? _savedStatus;
+  static Future<void>? _checking;
+
+  /// Lo último que quedó guardado en la cuenta ('uid|token|ok') y cuándo, para no
+  /// escribir en cada regreso a la app (pero sí de vez en cuando, por si se borró).
+  static String? _savedKey;
+  static DateTime? _savedAt;
+  static const _reSaveAfter = Duration(hours: 6);
 
   static Future<void> register(AppUser user) async {
+    if (_user?.uid != user.uid) _savedKey = null;
     _user = user;
-    _savedStatus = null;
-    if (kIsWeb) {
-      // iPhone: Safari solo deja pedir permiso cuando la persona toca un botón.
-      // Eso lo hace el aviso de arriba (WebAppBanner → enableWeb). Aquí solo se
-      // vuelve a guardar el token si ya había dado permiso antes.
-      if (WebPlatform.notificationPermission == 'granted') await _registerWeb(user);
-      return;
-    }
     final fm = FirebaseMessaging.instance;
-    // onRegistered entrega el token ahora y cada vez que cambie. Se escucha una sola vez
-    // (antes se sumaba un oyente nuevo cada vez que se entraba a la cuenta).
-    _registered ??= fm.onRegistered.listen((t) {
-      _token = t;
-      final u = _user;
-      if (u != null) _saveToken(u.uid, t);
-    });
     _lifecycle ??= AppLifecycleListener(onResume: () => refresh().catchError((_) {}));
-    await fm.requestPermission();
-    await fm.register();
-    if (user.role == Role.dueno) {
-      await fm.subscribeToTopic('dueno');
-    } else {
-      await fm.unsubscribeFromTopic('dueno');
+    // Si el token cambia (Android a veces lo renueva), se guarda el nuevo.
+    // ignore: deprecated_member_use
+    _tokenRefresh ??= fm.onTokenRefresh.listen((t) {
+      _token = t;
+      _savedKey = null;
+      refresh().catchError((_) {});
+    });
+    if (!kIsWeb) {
+      // Cada paso por separado: si uno falla (por ejemplo, Android ya está
+      // mostrando el permiso de ubicación), los demás siguen.
+      try {
+        await fm.requestPermission();
+      } catch (_) {}
+      try {
+        if (user.role == Role.dueno) {
+          await fm.subscribeToTopic('dueno');
+        } else {
+          await fm.unsubscribeFromTopic('dueno');
+        }
+      } catch (_) {}
     }
+    // iPhone (web): Safari solo deja pedir permiso cuando la persona toca un botón.
+    // Eso lo hace el aviso de arriba (WebAppBanner → enableWeb). Aquí solo se
+    // vuelve a guardar el token si ya había dado permiso antes.
     await refresh();
   }
 
-  /// Revisa si las notificaciones están prendidas en el celular. Si el cliente las
-  /// acaba de prender, vuelve a registrar el celular para que lleguen desde ya.
-  static Future<void> refresh() async {
+  /// Revisa si las notificaciones están prendidas y deja la cuenta al día.
+  /// Si se llama varias veces a la vez, se hace una sola revisión.
+  static Future<void> refresh() => _checking ??= _check().whenComplete(() => _checking = null);
+
+  static Future<void> _check() async {
     final user = _user;
-    if (user == null || kIsWeb) return;
+    if (user == null) return;
     final fm = FirebaseMessaging.instance;
-    final s = await fm.getNotificationSettings();
-    final ok =
-        s.authorizationStatus == AuthorizationStatus.authorized ||
-        s.authorizationStatus == AuthorizationStatus.provisional;
-    final wasOff = enabled.value == false;
-    enabled.value = ok;
-    if (_savedStatus != ok) {
-      _savedStatus = ok;
-      Repo.instance.savePushStatus(user.uid, ok).catchError((_) {});
+
+    bool? ok;
+    if (kIsWeb) {
+      final p = WebPlatform.notificationPermission;
+      ok = p == 'granted' ? true : (p == 'denied' ? false : null);
+    } else {
+      final s = await fm.getNotificationSettings();
+      ok = s.authorizationStatus == AuthorizationStatus.authorized ||
+          s.authorizationStatus == AuthorizationStatus.provisional;
+      enabled.value = ok;
     }
-    if (!ok) return;
-    if (wasOff) await fm.register();
-    final t = _token;
-    if (t != null) await _saveToken(user.uid, t);
+    if (ok == null) return; // Web: todavía no le pregunta. No se marca nada.
+    if (!ok) {
+      await _save(user.uid, null, false);
+      return;
+    }
+
+    var t = _token;
+    if (t == null || t.isEmpty) {
+      try {
+        // ignore: deprecated_member_use
+        t = await fm.getToken().timeout(const Duration(seconds: 20));
+      } catch (_) {
+        t = null; // Sin internet: se vuelve a intentar al regresar a la app.
+      }
+      if (t == null || t.isEmpty) return;
+      _token = t;
+    }
+    await _save(user.uid, t, true);
+  }
+
+  static Future<void> _save(String uid, String? token, bool ok) async {
+    final key = '$uid|$token|$ok';
+    final at = _savedAt;
+    if (_savedKey == key && at != null && DateTime.now().difference(at) < _reSaveAfter) return;
+    // Si no hay internet en ese momento, se reintenta un par de veces.
+    for (var i = 0; i < 3; i++) {
+      try {
+        await Repo.instance.savePush(uid, ok: ok, token: token);
+        _savedKey = key;
+        _savedAt = DateTime.now();
+        return;
+      } catch (_) {
+        await Future<void>.delayed(Duration(seconds: 5 * (i + 1)));
+      }
+    }
   }
 
   /// Botón "Activar": pide el permiso. Regresa true si quedaron prendidas.
@@ -86,7 +135,9 @@ class Push {
       final u = _user;
       return u != null && await enableWeb(u);
     }
-    await FirebaseMessaging.instance.requestPermission();
+    try {
+      await FirebaseMessaging.instance.requestPermission();
+    } catch (_) {}
     await refresh();
     return enabled.value == true;
   }
@@ -99,59 +150,22 @@ class Push {
   static Future<void> forget() async {
     final u = _user, t = _token;
     _user = null;
-    _savedStatus = null;
     _savedKey = null;
+    _savedAt = null;
     enabled.value = null;
     if (u != null && t != null) {
       await Repo.instance.removeFcmToken(u.uid, t).timeout(const Duration(seconds: 4));
     }
   }
 
-  /// Cuenta y token que ya quedaron guardados en esta sesión (para no escribir
-  /// en cada regreso a la app).
-  static String? _savedKey;
-
-  static Future<void> _saveToken(String uid, String token) async {
-    final key = '$uid/$token';
-    if (_savedKey == key) return;
-    // Si no hay internet en ese momento, se reintenta un par de veces.
-    for (var i = 0; i < 3; i++) {
-      try {
-        await Repo.instance.saveFcmToken(uid, token);
-        _savedKey = key;
-        return;
-      } catch (_) {
-        await Future<void>.delayed(Duration(seconds: 5 * (i + 1)));
-      }
-    }
-  }
-
   /// Versión web: pide permiso (debe llamarse justo al tocar un botón) y guarda el token.
   /// Regresa true si quedaron activados los avisos.
+  /// Los avisos los muestra web/firebase-messaging-sw.js aunque la app esté cerrada.
   static Future<bool> enableWeb(AppUser user) async {
     final s = await FirebaseMessaging.instance.requestPermission();
-    if (s.authorizationStatus != AuthorizationStatus.authorized) return false;
-    await _registerWeb(user);
-    return true;
-  }
-
-  static StreamSubscription<String>? _webRefresh;
-
-  /// En la web se usa el token clásico de FCM (sirve igual para la función que manda avisos).
-  /// Los avisos los muestra web/firebase-messaging-sw.js aunque la app esté cerrada.
-  static Future<void> _registerWeb(AppUser user) async {
-    final fm = FirebaseMessaging.instance;
-    // ignore: deprecated_member_use
-    _webRefresh ??= fm.onTokenRefresh.listen((t) {
-      _token = t;
-      Repo.instance.saveFcmToken(user.uid, t);
-    });
-    // ignore: deprecated_member_use
-    final token = await fm.getToken();
-    if (token != null && token.isNotEmpty) {
-      _token = token;
-      await Repo.instance.saveFcmToken(user.uid, token);
-    }
+    _user ??= user;
+    await refresh();
+    return s.authorizationStatus == AuthorizationStatus.authorized && _token != null;
   }
 }
 

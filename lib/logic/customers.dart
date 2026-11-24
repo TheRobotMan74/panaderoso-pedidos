@@ -130,10 +130,11 @@ List<(String, int)> pendingDays(List<CustomerSummary> customers, String today) {
 String pushReminderText(String name) {
   final first = name.trim().split(RegExp(r'\s+')).first;
   final hi = first.isEmpty ? '¡Hola!' : '¡Hola $first!';
-  return '$hi Te escribo de Panaderoso 🐻🥐. Vi que tienes apagadas las notificaciones de la app, '
+  return '$hi Te escribo de Panaderoso 🐻🥐. Vi que no te están llegando las notificaciones de la app, '
       'así no te llegan los avisos de cuando vamos en camino ni de cuándo abrimos pedidos. '
       'Para prenderlas: en tu celular ve a Ajustes → Aplicaciones → Panaderoso → Notificaciones y actívalas. '
-      '(Si usas la versión web en iPhone: Ajustes → Notificaciones → Panaderoso.) ¡Gracias!';
+      '(Si usas la versión web en iPhone: Ajustes → Notificaciones → Panaderoso.) '
+      'Si ya las tienes prendidas, solo abre la app de Panaderoso una vez para que se actualice. ¡Gracias!';
 }
 
 /// Parte una lista en pedazos de [size] (el servidor acepta hasta 200 clientes por mensaje).

@@ -203,32 +203,67 @@ exports.avisoLlegadaPunto = onDocumentUpdated('deliveryDays/{date}', async (even
   await avisarLlegada(event.params.date);
 });
 
+// Un token de FCM es largo (unas 150 letras, con ":"). Las versiones anteriores de la
+// app de Android guardaban por error el "FID" del celular (22 letras), que no sirve
+// como token: FCM lo rechaza y el aviso no llegaba. Esos se quitan de la cuenta.
+function esTokenFcm(t) {
+  return typeof t === 'string' && t.length > 64;
+}
+
+// Errores de FCM que quieren decir "este token ya no sirve, bórralo".
+function tokenMuerto(error) {
+  if (!error) return false;
+  const code = error.code || '';
+  return code === 'messaging/registration-token-not-registered'
+    || code === 'messaging/invalid-registration-token'
+    || (code === 'messaging/invalid-argument' && /token/i.test(error.message || ''));
+}
+
+// Manda un aviso a todos los celulares de un cliente. Regresa true si le llegó a
+// por lo menos uno. Limpia los tokens que ya no sirven y, si no le queda ninguno,
+// marca pushOk = false para que el dueño vea 🔕 (la app lo vuelve a poner en true
+// sola en cuanto el cliente la abre con los avisos prendidos).
 async function avisarCliente(uid, title, body) {
   const userRef = getFirestore().collection('users').doc(uid);
   const user = await userRef.get();
-  const tokens = user.get('fcmTokens') || [];
-  if (tokens.length === 0) return false;
+  if (!user.exists) return false;
+  const guardados = user.get('fcmTokens') || [];
+  const tokens = [...new Set(guardados.filter(esTokenFcm))];
+  const quitar = guardados.filter((t) => !esTokenFcm(t));
 
-  const res = await getMessaging().sendEachForMulticast({
-    tokens,
-    notification: { title, body },
-    android: { priority: 'high', notification: { sound: 'default' } },
-    // Versión web (iPhone): el ícono del oso y, al tocar el aviso, abrir la app.
-    webpush: {
-      notification: { icon: `${PAGINA_WEB}/icons/Icon-192.png` },
-      fcmOptions: { link: `${PAGINA_WEB}/` },
-    },
-  });
+  let llego = false;
+  if (tokens.length > 0) {
+    const res = await getMessaging().sendEachForMulticast({
+      tokens,
+      notification: { title, body },
+      android: { priority: 'high', notification: { sound: 'default' } },
+      // Versión web (iPhone): el ícono del oso y, al tocar el aviso, abrir la app.
+      webpush: {
+        notification: { icon: `${PAGINA_WEB}/icons/Icon-192.png` },
+        fcmOptions: { link: `${PAGINA_WEB}/` },
+      },
+    });
+    res.responses.forEach((r, i) => {
+      if (r.success) return;
+      if (tokenMuerto(r.error)) {
+        quitar.push(tokens[i]);
+      } else {
+        // Otro error (FCM caído, credenciales...): se deja el token y queda en el registro.
+        logger.warn('aviso no enviado', { uid, code: r.error?.code, message: r.error?.message });
+      }
+    });
+    llego = res.successCount > 0;
+  }
 
-  // Quitar tokens de celulares que ya no existen.
-  const dead = tokens.filter((_, i) => {
-    const code = res.responses[i].error?.code;
-    return code === 'messaging/registration-token-not-registered'
-      || code === 'messaging/invalid-registration-token';
-  });
-  if (dead.length) await userRef.update({ fcmTokens: FieldValue.arrayRemove(...dead) });
-  // true = le llegó a por lo menos uno de sus celulares.
-  return res.successCount > 0;
+  const cambios = {};
+  if (quitar.length) cambios.fcmTokens = FieldValue.arrayRemove(...quitar);
+  const vivos = tokens.filter((t) => !quitar.includes(t));
+  if (vivos.length === 0 && user.get('pushOk') !== false) cambios.pushOk = false;
+  if (Object.keys(cambios).length) {
+    await userRef.update(cambios).catch((e) => logger.warn('limpiar tokens', uid, e));
+  }
+  if (!llego) logger.info('aviso sin llegar', { uid, tokens: tokens.length, vivos: vivos.length });
+  return llego;
 }
 
 // Distancia en metros, en línea recta (haversine). Igual que lib/logic/geo.dart.

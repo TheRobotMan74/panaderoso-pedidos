@@ -70,11 +70,6 @@ class Repo {
     }
   }
 
-  Future<void> saveFcmToken(String uid, String token) =>
-      _db.collection('users').doc(uid).set({
-        'fcmTokens': FieldValue.arrayUnion([token]),
-      }, SetOptions(merge: true));
-
   /// Quita el aviso de este celular de la cuenta (al cerrar sesión), para que no
   /// le sigan llegando a este celular los avisos de la cuenta anterior.
   Future<void> removeFcmToken(String uid, String token) =>
@@ -82,12 +77,14 @@ class Repo {
         'fcmTokens': FieldValue.arrayRemove([token]),
       });
 
-  /// Si el cliente tiene prendidas las notificaciones en su celular
-  /// (el dueño ve en Pedidos a quién no le van a llegar los avisos).
-  Future<void> savePushStatus(String uid, bool enabled) =>
+  /// Estado de los avisos de este celular en la cuenta, en una sola escritura:
+  /// [ok] = notificaciones prendidas y token guardado (el dueño ve 🔕 si es false);
+  /// [token] = a dónde mandarle los avisos (se suma a los de sus otros celulares).
+  Future<void> savePush(String uid, {required bool ok, String? token}) =>
       _db.collection('users').doc(uid).set({
-        'pushOk': enabled,
+        'pushOk': ok,
         'pushCheckedAt': FieldValue.serverTimestamp(),
+        if (token != null) 'fcmTokens': FieldValue.arrayUnion([token]),
       }, SetOptions(merge: true));
 
   /// Clientes que tienen apagadas las notificaciones. Solo el dueño.
