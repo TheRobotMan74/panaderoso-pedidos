@@ -53,6 +53,22 @@ class Updates {
     }
   }
 
+  /// Tienda que instaló la app en Android: "com.android.vending" es Google Play.
+  static const playStore = 'com.android.vending';
+
+  /// true si la app se instaló desde Google Play (no con la APK de GitHub).
+  static Future<bool> installedFromPlay() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      return isPlayInstaller(info.installerStore);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// true si [installer] (el que instaló la app) es Google Play.
+  static bool isPlayInstaller(String? installer) => installer == playStore;
+
   /// La versión más nueva publicada en GitHub, o null si no hay internet o no se pudo leer.
   static Future<int?> latestPublishedNumber() async {
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
@@ -75,6 +91,9 @@ class Updates {
   static Future<NewApk?> checkNewApk() async {
     // La versión web (iPhone) se actualiza sola al abrirla: no hay APK que bajar.
     if (kIsWeb || !kReleaseMode || !Platform.isAndroid) return null;
+    // Instalada desde Google Play: Play se encarga de las versiones nuevas (sus reglas no
+    // dejan que la app ofrezca bajar otra APK). Las mejoras de Shorebird sí llegan igual.
+    if (await installedFromPlay()) return null;
     final installed = await installedNumber();
     if (installed <= 0) return null;
     final latest = await latestPublishedNumber();
@@ -125,6 +144,5 @@ class Updates {
       ].join(' · ');
 
   /// Lo mismo que [label], leyendo la versión y la mejora del celular.
-  static Future<String> versionLabel() async =>
-      label(await installedNumber(), await currentPatch());
+  static Future<String> versionLabel() async => label(await installedNumber(), await currentPatch());
 }

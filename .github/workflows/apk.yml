@@ -8,6 +8,15 @@
 #     · Si el cambio no toca la app (funciones, reglas, README), no publica nada.
 # - En main sin Shorebird: como antes, publica la APK en Releases en cada cambio.
 # Para forzar una APK nueva: Actions → APK → Run workflow → marcar "Armar APK nueva".
+#
+# Google Play: cada APK nueva trae también su paquete para Play (panaderoso.aab), de la
+# misma versión de Shorebird, así las mejoras les llegan igual a los de Play y a los de
+# GitHub. El .aab queda en la corrida (Artifacts → panaderoso-google-play-vN) para subirlo
+# a mano; con el secreto PLAY_SERVICE_ACCOUNT_JSON se sube solo a Play (pista "alpha" =
+# prueba cerrada; se cambia con la variable PLAY_TRACK, p. ej. "production").
+#
+# Las mejoras y las APK se arman con --no-tree-shake-icons (la fuente de íconos completa),
+# para que usar un ícono nuevo ya no obligue a sacar una APK nueva.
 name: APK
 
 on:
@@ -42,6 +51,8 @@ jobs:
       PUBLICA: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
       # 'true' cuando ya está el secreto de Shorebird. Solo dice si existe, no lo muestra.
       CON_SHOREBIRD: ${{ secrets.SHOREBIRD_TOKEN != '' }}
+      # 'true' cuando ya está la llave para subir a Google Play.
+      CON_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -171,7 +182,7 @@ jobs:
           BASE: ${{ steps.decidir.outputs.base }}
         run: |
           set +e
-          shorebird patch android --release-version="$BASE" --track=stable 2>&1 | tee mejora.log
+          shorebird patch android --release-version="$BASE" --track=stable -- --no-tree-shake-icons 2>&1 | tee mejora.log
           codigo=${PIPESTATUS[0]}
           set -e
           if [ "$codigo" -eq 0 ]; then
@@ -207,8 +218,11 @@ jobs:
           SHOREBIRD_TOKEN: ${{ secrets.SHOREBIRD_TOKEN }}
           NUMERO: ${{ github.run_number }}
         run: |
-          shorebird release android --flutter-version="$FLUTTER_VERSION" --artifact=apk --build-number="$NUMERO"
+          # --artifact=apk arma las dos: el .aab (Google Play) y la .apk (GitHub), con el mismo código.
+          shorebird release android --flutter-version="$FLUTTER_VERSION" --artifact=apk --build-number="$NUMERO" \
+            -- --no-tree-shake-icons
           cp build/app/outputs/flutter-apk/app-release.apk panaderoso.apk
+          cp build/app/outputs/bundle/release/app-release.aab panaderoso.aab
           nombre=$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)
           echo "version=$nombre+$NUMERO" >> "$GITHUB_OUTPUT"
           echo "### 📦 APK nueva v$NUMERO publicada: la app avisa para descargarla" >> "$GITHUB_STEP_SUMMARY"
@@ -232,3 +246,33 @@ jobs:
         with:
           name: panaderoso-apk
           path: panaderoso.apk
+
+      # ---------- Google Play ----------
+
+      - name: Guardar el paquete para Google Play (.aab)
+        if: steps.apk.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: panaderoso-google-play-v${{ github.run_number }}
+          path: panaderoso.aab
+          retention-days: 90
+
+      - name: Subir a Google Play
+        if: steps.apk.outcome == 'success' && env.CON_PLAY == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: mx.panaderoso.pedidos
+          releaseFiles: panaderoso.aab
+          releaseName: v${{ github.run_number }}
+          track: ${{ vars.PLAY_TRACK || 'alpha' }}
+          status: ${{ vars.PLAY_STATUS || 'completed' }}
+
+      - name: Anotar Google Play en el resumen
+        if: steps.apk.outcome == 'success'
+        run: |
+          if [ "$CON_PLAY" = true ]; then
+            echo "### ▶️ v${{ github.run_number }} subida a Google Play (pista ${{ vars.PLAY_TRACK || 'alpha' }})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### ▶️ Paquete para Google Play listo: Artifacts → panaderoso-google-play-v${{ github.run_number }}" >> "$GITHUB_STEP_SUMMARY"
+          fi

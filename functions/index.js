@@ -1024,3 +1024,65 @@ exports.mandarMensaje = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req
   logger.info('mensaje del dueño', { clientes: clientes.length, enviados });
   return { enviados, sinAvisos: clientes.length - enviados };
 });
+
+// ---------------------------------------------------------------------------
+// Borrar la cuenta (lo pide Google Play: el cliente la puede borrar desde la app).
+// Se borra: la cuenta (correo y contraseña), sus datos (nombre, teléfono, direcciones,
+// avisos), sus reseñas, sus ideas de pan y sus fotos (reseñas y capturas de pago).
+// Se queda, sin nombre ni teléfono ni dirección: lo vendido en sus pedidos pasados
+// (panes, montos y fecha) para las cuentas de la panadería, y la marca de "ya recibió
+// el pan de bienvenida" de su domicilio para que la promoción no se repita.
+// Con pedidos pendientes no se puede: primero se entregan o se cancelan.
+// ---------------------------------------------------------------------------
+exports.borrarCuenta = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('borrarCuenta', req);
+  const uid = req.auth && req.auth.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Inicia sesión para borrar tu cuenta.');
+  if (await esDueno(uid)) {
+    throw new HttpsError('failed-precondition', 'La cuenta del dueño no se borra desde la app.');
+  }
+
+  const db = getFirestore();
+  const pedidos = await db.collection('orders').where('customerId', '==', uid).get();
+  if (pedidos.docs.some((d) => PENDIENTES.includes(d.get('status')))) {
+    throw new HttpsError('failed-precondition',
+      'Tienes un pedido pendiente. Cuando te llegue (o si lo cancelas con nosotros) ya puedes borrar tu cuenta.');
+  }
+
+  // Pedidos pasados: quedan solo los panes, montos y fecha.
+  const escritor = db.bulkWriter();
+  for (const d of pedidos.docs) {
+    escritor.update(d.ref, {
+      customerName: 'Cuenta borrada',
+      phone: '',
+      address: '',
+      addressNotes: '',
+      notes: '',
+      lat: null,
+      lng: null,
+      paymentProofPath: null,
+      cuentaBorrada: true,
+    });
+  }
+  for (const col of ['reviews', 'suggestions']) {
+    const docs = await db.collection(col).where('customerId', '==', uid).get();
+    docs.forEach((d) => escritor.delete(d.ref));
+  }
+  escritor.delete(db.collection('users').doc(uid));
+  await escritor.close();
+
+  // Que ya no reciba la ubicación del repartidor.
+  await db.collection('tracking').doc('current')
+    .update({ viewers: FieldValue.arrayRemove(uid) })
+    .catch(() => {});
+
+  const bucket = getStorage().bucket();
+  for (const carpeta of ['payment-proofs', 'review-photos']) {
+    await bucket.deleteFiles({ prefix: `${carpeta}/${uid}/` })
+      .catch((e) => logger.warn('borrarCuenta fotos', carpeta, e));
+  }
+
+  await getAuth().deleteUser(uid);
+  logger.info('cuenta borrada', { pedidos: pedidos.size });
+  return { ok: true };
+});

@@ -321,6 +321,21 @@ class Repo {
     }
   }
 
+  /// Borra la cuenta del cliente y sus datos (lo hace el servidor, función "borrarCuenta").
+  /// Si tiene un pedido pendiente no se puede: lanza [RejectedByServer] con el motivo.
+  Future<void> deleteMyAccount() async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('borrarCuenta', options: HttpsCallableOptions(timeout: const Duration(seconds: 60)))
+          .call<Object?>();
+    } on FirebaseFunctionsException catch (e) {
+      if (const ['failed-precondition', 'unauthenticated'].contains(e.code)) {
+        throw RejectedByServer(e.message ?? 'No se pudo borrar la cuenta.');
+      }
+      rethrow;
+    }
+  }
+
   /// Borra el pedido para siempre: desaparece también en el celular del cliente
   /// y su lugar en el cupo del día se libera.
   Future<void> deleteOrder(String id) => _db.collection('orders').doc(id).delete();
