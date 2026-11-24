@@ -6,7 +6,7 @@ import 'calendar_page.dart';
 import 'delivery_banner.dart';
 import 'demand_page.dart';
 import 'feedback_page.dart';
-import 'loyalty_customers_page.dart';
+import 'customers_page.dart';
 import 'orders_page.dart';
 import 'products_page.dart';
 import 'send_message_page.dart';
@@ -70,10 +70,10 @@ class _OwnerHomeState extends State<OwnerHome> {
             },
           ),
           IconButton(
-            tooltip: 'Tarjetas de lealtad',
-            icon: const Icon(Icons.card_giftcard_rounded),
+            tooltip: 'Clientes',
+            icon: const Icon(Icons.person_outline_rounded),
             onPressed: () => Navigator.of(context)
-                .push(MaterialPageRoute<void>(builder: (_) => const LoyaltyCustomersPage())),
+                .push(MaterialPageRoute<void>(builder: (_) => const CustomersPage())),
           ),
           IconButton(
             tooltip: 'Mandar mensaje a clientes',
