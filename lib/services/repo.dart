@@ -97,6 +97,12 @@ class Repo {
       .snapshots()
       .map((s) => s.docs.map((d) => d.id).toSet());
 
+  /// Todas las cuentas de clientes (para la sección Clientes). Solo el dueño.
+  Stream<List<AppUser>> customers() => _db.collection('users').snapshots().map((s) => [
+        for (final d in s.docs)
+          if (d.data()['role'] != 'dueno') AppUser.fromMap(d.id, d.data()),
+      ]);
+
   /// Manda el correo para cambiar la contraseña. Primero intenta el correo bonito
   /// de Panaderoso (sale del Gmail de la panadería, función "mandarRecuperacion").
   /// Si el servidor no puede, manda el correo normal de Firebase, que también llega en español.

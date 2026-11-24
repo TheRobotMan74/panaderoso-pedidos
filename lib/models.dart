@@ -22,6 +22,10 @@ class AppUser {
   /// (para no volver a preguntarle por ese mismo pedido).
   final String? reviewSkipped;
 
+  /// Si tiene prendidas las notificaciones en su celular: true sí, false no,
+  /// null = todavía no sabemos (no ha abierto una versión que lo revise).
+  final bool? pushOk;
+
   const AppUser({
     required this.uid,
     required this.name,
@@ -33,6 +37,7 @@ class AppUser {
     this.lng,
     this.reviewSkipped,
     this.savedAddresses = const [],
+    this.pushOk,
   });
 
   /// Direcciones guardadas (de 1 a [maxAddresses]). La primera es la principal
@@ -66,6 +71,7 @@ class AppUser {
         lat: (m['lat'] as num?)?.toDouble(),
         lng: (m['lng'] as num?)?.toDouble(),
         reviewSkipped: m['reviewSkipped'] as String?,
+        pushOk: m['pushOk'] as bool?,
         savedAddresses: [
           for (final a in (m['addresses'] as List? ?? const []))
             if (a is Map) SavedAddress.fromMap(Map<String, dynamic>.from(a)),
