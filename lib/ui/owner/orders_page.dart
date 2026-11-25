@@ -99,7 +99,8 @@ class _OrdersPageState extends State<OrdersPage> {
 
   /// Ordena cada día por ruta (la acomodada a mano, o la que arma la app).
   static List<BakeryOrder> _routed(List<BakeryOrder> orders, AppConfig cfg, Map<String, DeliveryDay> days) {
-    final dates = orders.map((o) => o.deliveryDate).toSet().toList()..sort();
+    final dates = orders.map((o) => o.deliveryDate).toSet().toList()
+      ..sort((a, b) => compareDayIds(a, b, days));
     return [
       for (final d in dates)
         ...dayRoute(orders.where((o) => o.deliveryDate == d).toList(), cfg, day: days[d]),
@@ -193,7 +194,7 @@ class _OrdersPageState extends State<OrdersPage> {
           ..sort((a, b) => b.deliveryDate.compareTo(a.deliveryDate));
         // Lo que se puede palomear para borrar: solo lo que se ve aquí.
         final all = [...orders, ...cancelled];
-        final todayDone = finished.contains(today);
+        final todayDone = finished.any((d) => dayDateOf(d) == today);
         if (orders.isEmpty && cancelled.isEmpty) {
           return EmptyState(
             title: todayDone ? '¡Listo, todo entregado! 🎉' : 'Todo tranquilo por aquí',
@@ -244,7 +245,7 @@ class _OrdersPageState extends State<OrdersPage> {
                   semanticsLabel: open ? 'Plegar día' : 'Abrir día',
                   padding: const EdgeInsets.fromLTRB(0, 6, 4, 6),
                   child: SectionTitle(
-                    capitalize(dayLabel(o.deliveryDate)),
+                    dayTitle(o.deliveryDate, days.values),
                     padding: const EdgeInsets.only(left: 4),
                     trailing: Text(
                       '$count ${count == 1 ? 'pedido' : 'pedidos'}'

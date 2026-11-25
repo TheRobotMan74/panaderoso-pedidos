@@ -39,10 +39,11 @@ class DemandPage extends StatelessWidget {
             today: today,
             days: {for (final d in days) d.date: d},
           );
+          final byId = {for (final d in days) d.date: d};
           final dates = {...days.map((d) => d.date), ...orders.map((o) => o.deliveryDate)}
               .where((d) => !finished.contains(d))
               .toList()
-            ..sort();
+            ..sort((a, b) => compareDayIds(a, b, byId));
           if (dates.isEmpty) {
             return const EmptyState(
               title: 'Sin días próximos',
@@ -58,6 +59,7 @@ class DemandPage extends StatelessWidget {
                 FadeSlideIn(
                   index: i,
                   child: _DayCard(
+                    title: dayTitle(date, days),
                     demand: demandForDay(
                       date,
                       orders,
@@ -77,7 +79,8 @@ class DemandPage extends StatelessWidget {
 
 class _DayCard extends StatelessWidget {
   final DayDemand demand;
-  const _DayCard({required this.demand});
+  final String title;
+  const _DayCard({required this.demand, required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -104,7 +107,7 @@ class _DayCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(capitalize(dayLabel(demand.date)), style: theme.textTheme.titleLarge),
+                Text(title, style: theme.textTheme.titleLarge),
                 // Plegada: el resumen en un renglón.
                 AnimatedSize(
                   duration: Motion.of(context, Motion.rapido),

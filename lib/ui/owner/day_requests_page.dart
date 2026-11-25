@@ -61,7 +61,7 @@ class _DayRequestsPageState extends State<DayRequestsPage> {
               );
             }
             final open = {
-              for (final d in orderableDays(daysSnap.data ?? const [], DateTime.now())) d.date: d
+              for (final d in orderableDays(daysSnap.data ?? const [], DateTime.now())) d.day: d
             };
             return ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

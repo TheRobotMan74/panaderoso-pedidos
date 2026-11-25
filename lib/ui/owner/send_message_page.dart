@@ -83,11 +83,23 @@ class _SendMessagePageState extends State<SendMessagePage> {
     super.dispose();
   }
 
+  /// Lugar de los repartos especiales (id del día → "Acuity"), para distinguir
+  /// dos repartos del mismo día.
+  Map<String, String> _places = const {};
+
   String _dayChip(String date) {
     final now = DateTime.now();
-    if (date == dateKey(now)) return 'Hoy';
-    if (date == dateKey(DateTime(now.year, now.month, now.day + 1))) return 'Mañana';
-    return capitalize(dayLabel(date));
+    final day = dayDateOf(date);
+    final String text;
+    if (day == dateKey(now)) {
+      text = 'Hoy';
+    } else if (day == dateKey(DateTime(now.year, now.month, now.day + 1))) {
+      text = 'Mañana';
+    } else {
+      text = capitalize(dayLabel(date));
+    }
+    final place = _places[date];
+    return place != null ? '$text · 📍 $place' : text;
   }
 
   Future<void> _send(List<MessageRecipient> people) async {
@@ -163,6 +175,7 @@ class _SendMessagePageState extends State<SendMessagePage> {
           if (!snap.hasData) return const SkeletonList();
           final orders = snap.data!;
           final dates = {for (final o in orders) if (o.isPending) o.deliveryDate}.toList()..sort();
+          _places = {for (final o in orders) if (o.isPickup) o.deliveryDate: o.pickupName!};
           if (dates.isEmpty) {
             return const EmptyState(
               title: 'No hay pedidos pendientes',

@@ -24,6 +24,7 @@ const customerQuickMessages = [
 
 /// "Hoy", "Mañana" o "Vie 28".
 String shortDayChip(String date, DateTime now) {
+  date = dayDateOf(date);
   if (date == dateKey(now)) return 'Hoy';
   if (date == dateKey(DateTime(now.year, now.month, now.day + 1))) return 'Mañana';
   final d = parseDateKey(date);

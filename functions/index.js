@@ -48,7 +48,8 @@ exports.avisoPedidoNuevo = onDocumentCreated('orders/{id}', async (event) => {
     topic: 'dueno',
     notification: {
       title: `Pedido nuevo de ${o.customerName}`,
-      body: `${piezas} piezas para el ${o.deliveryDate} a las ${o.slot} · ${o.paymentMethod}`,
+      body: `${piezas} piezas para el ${String(o.deliveryDate).slice(0, 10)} a las ${o.slot}`
+        + `${o.puntoEntrega ? ` (${o.puntoEntrega})` : ''} · ${o.paymentMethod}`,
     },
     android: { priority: 'high', notification: { sound: 'default' } },
   });
@@ -396,6 +397,11 @@ async function domicilioYaRegalado(db, uid, lat, lng, direccion) {
   });
 }
 
+// Id de un reparto: la fecha ("2026-11-25") o, si ese día hay más de un
+// reparto, la fecha con un número ("2026-11-25-2"). Los pedidos lo guardan en
+// deliveryDate; el cupo y la ruta van por reparto.
+const DIA_RE = /^\d{4}-\d{2}-\d{2}(-\d{1,2})?$/;
+
 const texto = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const numeroONull = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
@@ -408,7 +414,7 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
   const d = req.data || {};
 
   const date = d.deliveryDate;
-  if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (typeof date !== 'string' || !DIA_RE.test(date)) {
     throw new HttpsError('invalid-argument', 'Falta el día de entrega.');
   }
   if (!['transferencia', 'efectivo'].includes(d.paymentMethod)) {
@@ -694,7 +700,7 @@ exports.cambiarDireccion = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (
     const antes = Number(o.shippingFee) || 0;
     aviso = {
       title: `📍 ${o.customerName || 'Un cliente'} cambió la dirección`,
-      body: `Pedido del ${o.deliveryDate} a las ${o.slot}: ${direccion}`
+      body: `Pedido del ${String(o.deliveryDate).slice(0, 10)} a las ${o.slot}: ${direccion}`
         + (fee !== antes ? ` · envío $${antes} → $${fee}` : ''),
     };
     return fee;
@@ -776,7 +782,6 @@ exports.limpiarPedidoBorrado = onDocumentDeleted('orders/{id}', async (event) =>
 // ---------------------------------------------------------------------------
 // Cambia la fecha y/o el horario de un día. Sus pedidos se pasan al día nuevo
 // (con su cupo) y a cada cliente con pedido pendiente le llega un aviso.
-const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
 const HORA_RE = /^\d{2}:\d{2}$/;
 
 async function esDueno(uid) {

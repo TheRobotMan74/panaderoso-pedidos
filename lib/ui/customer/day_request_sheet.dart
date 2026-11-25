@@ -110,7 +110,7 @@ class _DayRequestSheetState extends State<DayRequestSheet> {
           stream: _days,
           builder: (context, daysSnap) {
             final open = {
-              for (final d in orderableDays(daysSnap.data ?? const [], DateTime.now())) d.date: d
+              for (final d in orderableDays(daysSnap.data ?? const [], DateTime.now())) d.day: d
             };
             final openDay = _date == null ? null : open[_date];
             return SingleChildScrollView(

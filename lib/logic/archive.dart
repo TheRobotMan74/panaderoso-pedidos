@@ -18,7 +18,8 @@ bool dayFinished(
   required Map<String, DeliveryDay> days,
   bool daysLoaded = true,
 }) {
-  final c = date.compareTo(today);
+  // [date] es el id del reparto ("2026-11-25" o "2026-11-25-2"): se compara su fecha.
+  final c = (date.length > 10 ? date.substring(0, 10) : date).compareTo(today);
   if (c < 0) return true;
   if (c > 0 || !daysLoaded) return false;
   final live = dayOrders.where((o) => o.status != OrderStatus.cancelado).toList();

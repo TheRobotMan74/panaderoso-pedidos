@@ -40,7 +40,7 @@ class PickupDayNotice extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Este día es solo para entrega en ${p.name}, no a domicilio. '
+                  'Estos horarios son solo para entrega en ${p.name}, no a domicilio. '
                   'Te avisamos cuando vayamos en camino y cuando ya estemos ahí.',
                   style: theme.textTheme.bodySmall,
                 ),

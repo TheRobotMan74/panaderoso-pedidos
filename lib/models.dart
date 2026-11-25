@@ -197,7 +197,9 @@ class Product {
 
 /// Un día de entrega que publica el dueño, con sus horarios.
 class DeliveryDay {
-  /// Fecha en formato AAAA-MM-DD; también es el id del documento.
+  /// Id del reparto (también el id del documento): la fecha AAAA-MM-DD, o la
+  /// fecha con -2, -3… cuando hay varios repartos ese día. Los pedidos lo
+  /// guardan en deliveryDate. La fecha sola está en [day].
   final String date;
   final bool open;
 
@@ -240,6 +242,9 @@ class DeliveryDay {
   });
 
   bool get isPickup => pickup != null;
+
+  /// Fecha AAAA-MM-DD del reparto (sin el número de reparto).
+  String get day => date.length > 10 ? date.substring(0, 10) : date;
 
   factory DeliveryDay.fromMap(String id, Map<String, dynamic> m) => DeliveryDay(
         date: id,
