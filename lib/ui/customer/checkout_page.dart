@@ -206,14 +206,14 @@ class _CheckoutPageState extends State<CheckoutPage> {
         : previewGifts(
             rules: cfg.promos,
             myOrders: myOrders,
-            paidPieces: cart.pieces,
+            items: cart.items,
             pickupDay: pickup != null,
           );
     // Día especial: avisar que el regalo de bienvenida no se pierde.
     final welcomeSaved = pickup != null &&
         gift != null &&
         myOrders != null &&
-        previewGifts(rules: cfg.promos, myOrders: myOrders, paidPieces: cart.pieces).welcome;
+        previewGifts(rules: cfg.promos, myOrders: myOrders, items: cart.items).welcome;
     final welcomeMissing = gift != null &&
             pickup == null &&
             myOrders != null &&

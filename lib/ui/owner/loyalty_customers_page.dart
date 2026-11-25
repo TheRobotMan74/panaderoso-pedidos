@@ -43,8 +43,9 @@ class _LoyaltyCustomersPageState extends State<LoyaltyCustomersPage> {
               );
             }
             if (!snap.hasData || !cfgSnap.hasData) return const SkeletonList(count: 5);
-            final goal = cfgSnap.data!.promos.loyaltyGoal;
-            final all = customersLoyalty(snap.data!, goal);
+            final rules = cfgSnap.data!.promos;
+            final goal = rules.loyaltyGoal;
+            final all = customersLoyalty(snap.data!, rules);
             if (all.isEmpty) {
               return const EmptyState(
                 title: 'Todavía no hay clientes',
@@ -62,8 +63,11 @@ class _LoyaltyCustomersPageState extends State<LoyaltyCustomersPage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                   children: [
                     Text(
-                      'Cuentan las piezas compradas desde que salió la promoción. '
-                      '1 pan gratis cada $goal piezas.',
+                      rules.loyaltyProductIds.isEmpty
+                          ? 'Solo suman chocolatines y croissants comprados desde que salió la promoción. '
+                              '1 pan gratis cada $goal. Los panes que ya se regalaron no se quitan.'
+                          : 'Solo suman los panes que elegiste en Ajustes, comprados desde que salió '
+                              'la promoción. 1 pan gratis cada $goal. Los que ya se regalaron no se quitan.',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 10),
@@ -95,8 +99,8 @@ class _CustomerCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final pending = c.card.pending(goal);
-    final done = c.card.progress(goal);
+    final pending = c.card.pending;
+    final done = c.card.progress;
     return PanCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Column(
@@ -118,10 +122,9 @@ class _CustomerCard extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              _Chip('${c.card.pieces} piezas en la tarjeta'),
+              _Chip('${c.card.pieces} ${c.card.pieces == 1 ? 'pieza suma' : 'piezas suman'}'),
               _Chip('${c.orders} pedido${c.orders == 1 ? '' : 's'}'),
-              if (c.loyaltyGiven > 0)
-                _Chip('🎁 ${c.loyaltyGiven} gratis por tarjeta', green: true),
+              if (c.loyaltyGiven > 0) _Chip('🎁 ${c.loyaltyGiven} gratis por tarjeta', green: true),
               if (pending > 0) _Chip('Le toca $pending en su siguiente pedido', green: true),
               _Chip(c.welcomeUsed ? '🎁 Ya usó la bienvenida' : 'Sin bienvenida', green: c.welcomeUsed),
             ],

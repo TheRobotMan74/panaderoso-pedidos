@@ -12,7 +12,7 @@ BakeryOrder _order({String? pickup, bool arrived = false, OrderStatus status = O
       customerName: 'Ana',
       phone: '',
       address: pickup == null ? 'Calle 1' : 'Entrega en $pickup',
-      items: const [OrderItem(productId: 'p', name: 'Dona', price: 20, qty: 3)],
+      items: const [OrderItem(productId: 'p', name: 'Chocolatín', price: 30, qty: 3)],
       deliveryDate: '2026-11-28',
       slot: '10:00',
       paymentMethod: PaymentMethod.efectivo,
@@ -21,6 +21,8 @@ BakeryOrder _order({String? pickup, bool arrived = false, OrderStatus status = O
       pickupName: pickup,
       arrivalNotified: arrived,
     );
+
+List<OrderItem> _items(int n) => [OrderItem(productId: 'p', name: 'Chocolatín', price: 30, qty: n)];
 
 void main() {
   setUpAll(() => initializeDateFormatting('es_MX'));
@@ -52,16 +54,16 @@ void main() {
     const rules = PromoRules();
     final orders = [_order(pickup: 'FIME')];
     expect(isFirstOrder(orders), isTrue);
-    expect(previewGifts(rules: rules, myOrders: orders, paidPieces: 2).welcome, isTrue);
-    expect(previewGifts(rules: rules, myOrders: orders, paidPieces: 2, pickupDay: true).welcome, isFalse);
+    expect(previewGifts(rules: rules, myOrders: orders, items: _items(2)).welcome, isTrue);
+    expect(previewGifts(rules: rules, myOrders: orders, items: _items(2), pickupDay: true).welcome, isFalse);
     expect(isFirstOrder([_order()]), isFalse);
   });
 
   test('pedido de día especial sí cuenta para la tarjeta', () {
-    final card = LoyaltyCard.from([_order(pickup: 'FIME'), _order()]);
+    final card = LoyaltyCard.from([_order(pickup: 'FIME'), _order()], const PromoRules());
     expect(card.pieces, 6);
     final p = previewGifts(
-        rules: const PromoRules(), myOrders: [_order(pickup: 'FIME')], paidPieces: 7, pickupDay: true);
+        rules: const PromoRules(), myOrders: [_order(pickup: 'FIME')], items: _items(7), pickupDay: true);
     expect(p.loyalty, 1);
   });
 

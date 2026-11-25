@@ -320,8 +320,9 @@ function stockLabel(productId, product) {
 // Promociones: tarjeta de lealtad y pan de bienvenida
 // ---------------------------------------------------------------------------
 // Igual que lib/logic/promos.dart. Aquí es donde de verdad se pone el pan gratis.
-// - Lealtad: cada `meta` piezas compradas (desde que salió la promo, sin contar
-//   pedidos cancelados) = 1 pan gratis, que va en el pedido que llega a la meta.
+// - Lealtad: cada `meta` piezas compradas de los panes que suman (`suman`; si no
+//   eligió ninguno, chocolatín y croissants), desde que salió la promo y sin contar
+//   pedidos cancelados = 1 pan gratis, que va en el pedido que llega a la meta.
 // - Bienvenida: 1 pan gratis en el primer pedido de la cuenta, si lleva al menos
 //   `minimo` piezas. Uno por cuenta y uno por domicilio.
 // Los panes regalados van en `items` con precio 0 y `regalo: 'lealtad' | 'bienvenida'`,
@@ -336,7 +337,24 @@ function reglasPromo(config) {
     bienvenida: p.welcomeEnabled !== false,
     minimo: entero(p.welcomeMinPieces, 2, 1, 50),
     productoId: typeof p.giftProductId === 'string' ? p.giftProductId : '',
+    // Panes que suman a la tarjeta. Vacío = chocolatín y croissants (donas no).
+    suman: Array.isArray(p.loyaltyProductIds)
+      ? p.loyaltyProductIds.filter((x) => typeof x === 'string' && x) : [],
   };
+}
+
+// Piezas de un pedido que suman a la tarjeta (los regalados nunca suman).
+// Igual que loyaltyPiecesOf en lib/logic/promos.dart.
+function piezasLealtad(reglas, items) {
+  let n = 0;
+  for (const it of items || []) {
+    if (it.regalo) continue;
+    const ok = reglas.suman.length
+      ? reglas.suman.includes(it.productId)
+      : /chocolat|croissant|cuernito/.test(sinAcentos(it.name));
+    if (ok) n += Number(it.qty) || 0;
+  }
+  return n;
 }
 
 const sinAcentos = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -501,15 +519,21 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
         quiere.bienvenida = 1;
       }
       if (reglas.lealtad) {
-        let piezas = pagadas;
-        let dados = 0;
-        for (const o of activos) {
-          const lp = o.get('lealtadPiezas');
-          if (typeof lp !== 'number') continue; // pedidos de antes de la promo
-          piezas += lp;
-          for (const it of o.get('items') || []) if (it.regalo === 'lealtad') dados += Number(it.qty) || 0;
+        // En orden: cada pedido suma sus piezas que cuentan y cada pan de lealtad
+        // que se le dio resta una tarjeta llena, sin bajar de 0 (lo que se regaló
+        // cuando contaba cualquier pan no se cobra). Igual que LoyaltyCard en Dart.
+        const ms = (o) => { const t = o.get('createdAt'); return t && t.toMillis ? t.toMillis() : Infinity; };
+        const conTarjeta = activos
+          .filter((o) => typeof o.get('lealtadPiezas') === 'number') // los de antes de la promo no
+          .sort((a, b) => ms(a) - ms(b));
+        let saldo = 0;
+        for (const o of conTarjeta) {
+          const its = o.get('items') || [];
+          let dados = 0;
+          for (const it of its) if (it.regalo === 'lealtad') dados += Number(it.qty) || 0;
+          saldo = Math.max(0, saldo + piezasLealtad(reglas, its) - dados * reglas.meta);
         }
-        quiere.lealtad = Math.min(10, Math.max(0, Math.floor(piezas / reglas.meta) - dados));
+        quiere.lealtad = Math.min(10, Math.floor((saldo + piezasLealtad(reglas, items)) / reglas.meta));
       }
       // El regalo también usa cupo. Si ya no cabe, no se pone: el de lealtad se
       // queda guardado para el siguiente pedido.

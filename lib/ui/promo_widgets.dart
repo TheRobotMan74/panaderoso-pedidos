@@ -36,7 +36,8 @@ class GiftTag extends StatelessWidget {
       );
 }
 
-/// Tarjeta de lealtad del cliente: "7 de 10 piezas", con un punto por pieza.
+/// Tarjeta de lealtad del cliente: "7 de 10", con un punto por pieza que suma
+/// (normalmente chocolatín y croissants).
 /// También avisa del pan de bienvenida si todavía no ha pedido.
 /// No se muestra nada si el dueño apagó las dos promociones.
 class LoyaltyCardView extends StatelessWidget {
@@ -59,7 +60,7 @@ class LoyaltyCardView extends StatelessWidget {
             if (rules != null && gift != null && orders != null) {
               final welcome = rules.welcomeEnabled && isFirstOrder(orders);
               if (welcome || rules.loyaltyEnabled) {
-                child = _card(context, rules, gift, orders, welcome);
+                child = _card(context, rules, gift, prodSnap.data ?? const [], orders, welcome);
               }
             }
             return AnimatedSize(
@@ -74,12 +75,14 @@ class LoyaltyCardView extends StatelessWidget {
     );
   }
 
-  Widget _card(BuildContext context, PromoRules rules, Product gift, List<BakeryOrder> orders, bool welcome) {
+  Widget _card(BuildContext context, PromoRules rules, Product gift, List<Product> products,
+      List<BakeryOrder> orders, bool welcome) {
     final theme = Theme.of(context);
-    final card = LoyaltyCard.from(orders);
+    final card = LoyaltyCard.from(orders, rules);
     final goal = rules.loyaltyGoal;
-    final done = card.progress(goal);
-    final pending = card.pending(goal);
+    final done = card.progress;
+    final pending = card.pending;
+    final what = loyaltyWhat(rules, products);
     final name = gift.name;
     return Padding(
       padding: const EdgeInsets.only(top: 12),
@@ -102,8 +105,7 @@ class LoyaltyCardView extends StatelessWidget {
                     child: Text('Tarjeta de lealtad',
                         style: theme.textTheme.titleSmall!.copyWith(color: Pan.tostado)),
                   ),
-                  Text('$done de $goal',
-                      style: theme.textTheme.titleSmall!.copyWith(color: Pan.caramelo)),
+                  Text('$done de $goal', style: theme.textTheme.titleSmall!.copyWith(color: Pan.caramelo)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -112,7 +114,8 @@ class LoyaltyCardView extends StatelessWidget {
               Text(
                 pending > 0
                     ? '¡Ya te ganaste $pending $name! Va gratis en tu siguiente pedido.'
-                    : 'Cada $goal piezas, 1 $name gratis. Te faltan ${card.missing(goal)}.',
+                    : 'Cada $goal $what que compras, 1 $name gratis. Te faltan ${card.missing}. '
+                        'Solo suman esos panes.',
                 style: theme.textTheme.bodySmall,
               ),
             ],
