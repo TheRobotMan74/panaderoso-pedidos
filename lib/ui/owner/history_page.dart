@@ -90,7 +90,13 @@ class _HistoryPageState extends State<HistoryPage> {
     final dates = orders.map((o) => o.deliveryDate).toSet().toList()..sort((a, b) => b.compareTo(a));
     final children = <Widget>[
       _SummaryCard(summary: SalesSummary.of(orders)),
-      for (final d in dates) _DayCard(date: d, orders: orders.where((o) => o.deliveryDate == d).toList()),
+      for (final d in dates)
+        _DayCard(
+          date: d,
+          orders: orders.where((o) => o.deliveryDate == d).toList(),
+          // Si ese día hubo más de un reparto, se dice cuál es cuál.
+          several: dates.where((x) => dayDateOf(x) == dayDateOf(d)).length > 1,
+        ),
     ];
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -229,7 +235,8 @@ class _Line extends StatelessWidget {
 class _DayCard extends StatelessWidget {
   final String date;
   final List<BakeryOrder> orders;
-  const _DayCard({required this.date, required this.orders});
+  final bool several;
+  const _DayCard({required this.date, required this.orders, this.several = false});
 
   @override
   Widget build(BuildContext context) {
@@ -248,7 +255,13 @@ class _DayCard extends StatelessWidget {
         child: ExpansionTile(
           shape: const Border(),
           collapsedShape: const Border(),
-          title: Text(capitalize(dayLabel(date)), style: theme.textTheme.titleSmall),
+          title: Text(
+            several
+                ? '${capitalize(dayLabel(date))} · ${clockLabel(slotMinute(sorted.first.slot))} · '
+                    '${sorted.first.pickupName ?? 'a domicilio'}'
+                : capitalize(dayLabel(date)),
+            style: theme.textTheme.titleSmall,
+          ),
           subtitle: Text(
             '${s.delivered} ${s.delivered == 1 ? 'pedido' : 'pedidos'} · ${s.pieces} '
             '${s.pieces == 1 ? 'pieza' : 'piezas'}'

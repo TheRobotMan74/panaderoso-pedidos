@@ -34,7 +34,7 @@ class CalendarPage extends StatelessWidget {
               stream: Repo.instance.ordersFrom(today),
               builder: (context, ordersSnap) {
                 if (!daysSnap.hasData || !prodSnap.hasData) return const SkeletonList(count: 4);
-                final days = daysSnap.data!;
+                final days = [...daysSnap.data!]..sort(compareDays);
                 final groups = stockGroups(prodSnap.data!);
                 final stocks = stockSnap.data ?? const {};
                 final orders = ordersSnap.data ?? const <BakeryOrder>[];
@@ -305,6 +305,11 @@ class _DayTile extends StatelessWidget {
                         Text('📍 Especial: entrega en ${day.pickup!.name}',
                             style: theme.textTheme.bodySmall!
                                 .copyWith(color: Pan.caramelo, fontWeight: FontWeight.w800)),
+                      // Si ese día hay otro reparto, que se vea cuál es el de a domicilio.
+                      if (day.pickup == null && allDays.any((d) => d.day == day.day && d.date != day.date))
+                        Text('🏠 A domicilio',
+                            style: theme.textTheme.bodySmall!
+                                .copyWith(color: Pan.tostado, fontWeight: FontWeight.w800)),
                       Text(
                         day.closed
                             ? 'Repartiendo · pedidos cerrados'
@@ -647,7 +652,8 @@ class _MoveDaySheet extends StatefulWidget {
 }
 
 class _MoveDaySheetState extends State<_MoveDaySheet> {
-  late String _date = widget.day.date;
+  /// Fecha elegida (AAAA-MM-DD, sin número de reparto).
+  late String _date = widget.day.day;
   late int _every = slotLengths.contains(widget.day.slotMinutes) ? widget.day.slotMinutes : 60;
   late int _start = _nearestChoice(widget.day.slots.isEmpty ? 8 * 60 : slotMinute(widget.day.slots.first));
   late int _end = _nearestChoice(
@@ -660,14 +666,20 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
     return [for (var i = 0; i < 29; i++) dateKey(DateTime(t.year, t.month, t.day + i))];
   }
 
-  bool _taken(String date) => date != widget.day.date && widget.allDays.any((d) => d.date == date);
+  /// Otros repartos que ya hay en [date] (se puede mover ahí: queda como otro reparto).
+  int _others(String date) => widget.allDays.where((d) => d.day == date && d.date != widget.day.date).length;
+
+  /// Id del reparto en su fecha nueva: el mismo si no cambia de día.
+  String get _target => _date == widget.day.day
+      ? widget.day.date
+      : newDayId(_date, widget.allDays.where((d) => d.date != widget.day.date).map((d) => d.date));
 
   Future<void> _save() async {
     setState(() => _busy = true);
     try {
       final told = await Repo.instance.moveDeliveryDay(
         from: widget.day.date,
-        to: _date,
+        to: _target,
         slots: slotsBetween(_start, _end, _every),
         slotMinutes: _every,
       );
@@ -690,10 +702,10 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
     final theme = Theme.of(context);
     final dates = _dates;
     final newSlots = slotsBetween(_start, _end, _every);
-    final changed = _date != widget.day.date ||
+    final changed = _date != widget.day.day ||
         newSlots.join() != widget.day.slots.join() ||
         _every != widget.day.slotMinutes;
-    final valid = newSlots.isNotEmpty && !_taken(_date) && changed;
+    final valid = newSlots.isNotEmpty && changed;
     final n = widget.pendingOrders;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
@@ -708,7 +720,7 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
           Text('Nueva fecha', style: theme.textTheme.titleSmall),
           const SizedBox(height: 8),
           SizedBox(
-            height: 76,
+            height: 84,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               itemCount: dates.length,
@@ -717,37 +729,39 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
                 final key = dates[i];
                 final d = parseDateKey(key);
                 final selected = key == _date;
-                final taken = _taken(key);
+                final taken = _others(key) > 0;
                 return Pressable(
-                  onTap: taken ? null : () => setState(() => _date = key),
+                  onTap: () => setState(() => _date = key),
                   child: AnimatedContainer(
                     duration: Motion.of(context, Motion.medio),
                     width: 60,
                     decoration: BoxDecoration(
                       gradient: selected ? Pan.gradienteMiel : null,
-                      color: selected ? null : (taken ? Pan.harina : Pan.papel),
+                      color: selected ? null : Pan.papel,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: selected ? Colors.transparent : const Color(0xFFEADCC4)),
                     ),
-                    child: Opacity(
-                      opacity: taken ? 0.45 : 1,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(DateFormat('EEE', 'es_MX').format(d).replaceAll('.', '').toUpperCase(),
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w800, color: Pan.tostado)),
-                          Text('${d.day}',
-                              style: const TextStyle(
-                                  fontFamily: 'Fraunces',
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.15)),
-                          Text(DateFormat('MMM', 'es_MX').format(d).replaceAll('.', ''),
-                              style: const TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w700, color: Pan.canela)),
-                        ],
-                      ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(DateFormat('EEE', 'es_MX').format(d).replaceAll('.', '').toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w800, color: Pan.tostado)),
+                        Text('${d.day}',
+                            style: const TextStyle(
+                                fontFamily: 'Fraunces',
+                                fontSize: 22,
+                                fontWeight: FontWeight.w700,
+                                height: 1.15)),
+                        Text(DateFormat('MMM', 'es_MX').format(d).replaceAll('.', ''),
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w700, color: Pan.canela)),
+                        if (taken)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [for (var i = 0; i < _others(key).clamp(0, 3); i++) const _Dot()],
+                          ),
+                      ],
                     ),
                   ),
                 );
@@ -766,6 +780,14 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
             }),
           ),
           const SizedBox(height: 6),
+          if (_date != widget.day.day && _others(_date) > 0) ...[
+            Text(
+              'Ese día ya tiene ${widget.allDays.where((d) => d.day == _date && d.date != widget.day.date).map(repartoShort).join(' y ')}. '
+              'Este se agrega como otro reparto.',
+              style: theme.textTheme.bodySmall!.copyWith(color: Pan.cielo, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+          ],
           Text(
             n == 0
                 ? 'Este día no tiene pedidos pendientes.'
@@ -775,7 +797,7 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
           ),
           const SizedBox(height: 12),
           HoneyButton(
-            label: _date == widget.day.date ? 'Guardar horario' : 'Mover al ${dayLabel(_date)}',
+            label: _date == widget.day.day ? 'Guardar horario' : 'Mover al ${dayLabel(_date)}',
             icon: Icons.edit_calendar_rounded,
             busy: _busy,
             onPressed: valid ? _save : null,
@@ -786,8 +808,6 @@ class _MoveDaySheetState extends State<_MoveDaySheet> {
   }
 }
 
-/// Abrir varios días de golpe, por ejemplo lunes, miércoles y viernes de 8 a 11,
-/// con su cupo de panes.
 /// Cambiar un día ya abierto (sin pedidos) entre "a domicilio" y "especial".
 class _PickupSheet extends StatefulWidget {
   final DeliveryDay day;
@@ -849,10 +869,13 @@ class _PickupSheetState extends State<_PickupSheet> {
       );
 }
 
+/// Abrir días sueltos eligiéndolos en un calendario, con sus horarios, lugar y
+/// cupo. Si un día ya tiene reparto se le agrega otro (por ejemplo Acuity a
+/// las 7:45 y a domicilio al mediodía).
 class _OpenDaysSheet extends StatefulWidget {
   final List<StockGroup> groups;
 
-  /// Para abrir un solo día (el que piden los clientes) en vez de días de la semana.
+  /// Para abrir ya marcado el día que piden los clientes.
   final String? onlyDate;
   final int? start;
   final int? end;
@@ -863,15 +886,17 @@ class _OpenDaysSheet extends StatefulWidget {
 }
 
 class _OpenDaysSheetState extends State<_OpenDaysSheet> {
-  static const _weekdayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-  final Set<int> _weekdays = {DateTime.monday, DateTime.wednesday, DateTime.friday};
-  int _weeks = 1;
+  /// Fechas elegidas en el calendario (AAAA-MM-DD).
+  late final Set<String> _picked = {if (widget.onlyDate != null) widget.onlyDate!};
   late int _start = _nearestChoice(widget.start ?? 8 * 60);
   late int _end = _nearestChoice(widget.end ?? 11 * 60);
   int _every = 60;
   bool _busy = false;
   late final _stock = {for (final g in widget.groups) g.key: TextEditingController()};
   final _pointKey = GlobalKey<PickupPointFieldsState>();
+
+  /// Repartos que ya hay, para marcarlos en el calendario.
+  late final _days = Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
 
   /// Día especial: entrega en un solo lugar (null = a domicilio o falta completar).
   PickupPoint? _point;
@@ -885,15 +910,7 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
     super.dispose();
   }
 
-  /// Fechas que se van a abrir: los días elegidos en las próximas [_weeks] semanas.
-  List<String> get _dates {
-    if (widget.onlyDate != null) return [widget.onlyDate!];
-    final today = DateTime.now();
-    final start = DateTime(today.year, today.month, today.day + 1);
-    return [
-      for (var i = 0; i < 7 * _weeks; i++) DateTime(start.year, start.month, start.day + i),
-    ].where((d) => _weekdays.contains(d.weekday)).map(dateKey).toList();
-  }
+  List<String> get _dates => _picked.toList()..sort();
 
   Future<void> _save() async {
     setState(() => _busy = true);
@@ -902,43 +919,26 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
     if (point != null && _pointKey.currentState?.remember == true) {
       await Repo.instance.savePickupPoint(point).catchError((_) {});
     }
-    // Un día que ya tiene pedidos no cambia de "a domicilio" a "especial" (o al revés):
-    // esos pedidos ya traen su dirección.
+    // Cada vez que abres un día se agrega un reparto nuevo: si ese día ya
+    // tenía uno (por ejemplo Acuity a las 7:45), el otro queda igual.
     final today = dateKey(DateTime.now());
-    final existing = {for (final d in await Repo.instance.deliveryDays(fromDate: today).first) d.date: d};
-    final pending = {
-      for (final o in await Repo.instance.ordersFrom(today).first)
-        if (o.isPending) o.deliveryDate,
-    };
-    final skipped = <String>[];
+    final ids = {for (final d in await Repo.instance.deliveryDays(fromDate: today).first) d.date};
     for (final date in _dates) {
-      final before = existing[date];
-      if (before != null && pending.contains(date) && before.pickup?.name != point?.name) {
-        skipped.add(date);
-        continue;
-      }
+      final id = newDayId(date, ids);
+      ids.add(id);
       await Repo.instance.saveDeliveryDay(DeliveryDay(
-        date: date,
+        date: id,
         open: true,
         slots: slotsBetween(_start, _end, _every),
         slotMinutes: _every,
         pickup: point,
       ));
-      if (stock.isNotEmpty) await Repo.instance.setDayStock(date, stock);
+      if (stock.isNotEmpty) await Repo.instance.setDayStock(id, stock);
     }
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    if (skipped.isNotEmpty) {
-      messenger.showSnackBar(SnackBar(
-        content: Text('No cambié ${skipped.map(dayLabel).join(', ')}: ya '
-            '${skipped.length == 1 ? 'tiene' : 'tienen'} pedidos con otro lugar de entrega.'),
-      ));
-    }
     // ¿Algún cliente había pedido estos días? Se les ofrece avisar.
-    final opened = [
-      for (final d in _dates)
-        if (!skipped.contains(d)) d
-    ];
+    final opened = _dates;
     final waiting =
         toNotify(await Repo.instance.allDayRequests().first.catchError((_) => <DayRequest>[]), opened);
     if (!mounted) return;
@@ -949,91 +949,348 @@ class _OpenDaysSheetState extends State<_OpenDaysSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final dates = _dates;
     final valid =
         slotsBetween(_start, _end, _every).isNotEmpty && dates.isNotEmpty && (!_special || _point != null);
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + MediaQuery.of(context).viewInsets.bottom),
       child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.onlyDate == null ? 'Abrir días de entrega' : 'Abrir ${dayLabel(widget.onlyDate!)}',
-                style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 12),
-            if (widget.onlyDate == null) ...[
-              Wrap(
-                spacing: 6,
-                children: [
-                  for (var wd = 1; wd <= 7; wd++)
-                    FilterChip(
-                      label: Text(_weekdayNames[wd - 1]),
-                      selected: _weekdays.contains(wd),
-                      onSelected: (s) => setState(() => s ? _weekdays.add(wd) : _weekdays.remove(wd)),
+        child: StreamBuilder<List<DeliveryDay>>(
+          stream: _days,
+          builder: (context, snap) {
+            final existing = snap.data ?? const <DeliveryDay>[];
+            final byDate = <String, List<DeliveryDay>>{};
+            for (final d in existing.toList()..sort(compareDays)) {
+              byDate.putIfAbsent(d.day, () => []).add(d);
+            }
+            final repeated = [
+              for (final date in dates)
+                if (byDate[date] != null) date,
+            ];
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Abrir días de entrega', style: theme.textTheme.headlineSmall),
+                const SizedBox(height: 2),
+                Text('Toca en el calendario los días que vas a repartir.', style: theme.textTheme.bodySmall),
+                const SizedBox(height: 12),
+                _DatePickerCalendar(
+                  picked: _picked,
+                  repartos: {for (final e in byDate.entries) e.key: e.value.length},
+                  onToggle: (date) =>
+                      setState(() => _picked.contains(date) ? _picked.remove(date) : _picked.add(date)),
+                ),
+                const SizedBox(height: 10),
+                AnimatedSize(
+                  duration: Motion.of(context, Motion.medio),
+                  curve: Motion.curva,
+                  alignment: Alignment.topCenter,
+                  child: dates.isEmpty
+                      ? const SizedBox(width: double.infinity)
+                      : Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final d in dates)
+                              InputChip(
+                                label: Text(_chipLabel(d)),
+                                onDeleted: () => setState(() => _picked.remove(d)),
+                                deleteIcon: const Icon(Icons.close_rounded, size: 16),
+                                backgroundColor: Pan.mielClara,
+                                side: BorderSide.none,
+                                labelStyle: const TextStyle(fontWeight: FontWeight.w800, color: Pan.cacao),
+                              ),
+                          ],
+                        ),
+                ),
+                if (repeated.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                    decoration: BoxDecoration(color: Pan.cieloClaro, borderRadius: BorderRadius.circular(14)),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.add_road_rounded, size: 18, color: Pan.cielo),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            [
+                              for (final date in repeated)
+                                '${capitalize(_chipLabel(date))} ya tiene '
+                                    '${byDate[date]!.map(repartoShort).join(' y ')}.',
+                              'Se agrega otro reparto ese día, con sus propios horarios, lugar y cupo.',
+                            ].join('\n'),
+                            style: theme.textTheme.bodySmall!.copyWith(color: Pan.cacao),
+                          ),
+                        ),
+                      ],
                     ),
+                  ),
                 ],
+                const SizedBox(height: 14),
+                _SlotPicker(
+                  start: _start,
+                  end: _end,
+                  every: _every,
+                  onChanged: (start, end, every) => setState(() {
+                    _start = start;
+                    _end = end;
+                    _every = every;
+                  }),
+                ),
+                const SizedBox(height: 8),
+                PickupPointFields(
+                  key: _pointKey,
+                  onChanged: (p) => setState(() => _point = p),
+                  onModeChanged: (v) => setState(() => _special = v),
+                ),
+                if (widget.groups.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text('Cupo de panes por reparto (opcional)', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 10),
+                  _StockFields(groups: widget.groups, controllers: _stock),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  dates.isEmpty
+                      ? 'Elige al menos un día en el calendario.'
+                      : _special && _point == null
+                          ? 'Escribe el nombre del lugar y márcalo en el mapa.'
+                          : 'Se ${dates.length == 1 ? 'abre 1 día' : 'abren ${dates.length} días'}${_point != null ? ' de entrega en ${_point!.name}' : ''}. '
+                              'Se puede pedir hasta que empieces a repartir o se acabe el cupo.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                HoneyButton(
+                  label: dates.isEmpty
+                      ? 'Abrir'
+                      : dates.length == 1
+                          ? 'Abrir ${_chipLabel(dates.single)}'
+                          : 'Abrir ${dates.length} días',
+                  icon: Icons.event_available_rounded,
+                  busy: _busy,
+                  onPressed: valid ? _save : null,
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+/// "mié 25 nov"
+String _chipLabel(String date) =>
+    DateFormat("EEE d MMM", 'es_MX').format(parseDateKey(date)).replaceAll('.', '');
+
+/// Calendario de un mes para elegir días sueltos (de hoy a 3 meses).
+/// Los días que ya tienen reparto llevan un puntito por cada reparto.
+class _DatePickerCalendar extends StatefulWidget {
+  final Set<String> picked;
+
+  /// Cuántos repartos hay ya en cada fecha.
+  final Map<String, int> repartos;
+  final ValueChanged<String> onToggle;
+  const _DatePickerCalendar({required this.picked, required this.repartos, required this.onToggle});
+
+  @override
+  State<_DatePickerCalendar> createState() => _DatePickerCalendarState();
+}
+
+class _DatePickerCalendarState extends State<_DatePickerCalendar> {
+  static const _weekdays = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  static const _monthsAhead = 3;
+  late final DateTime _today = () {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }();
+  late DateTime _month = DateTime(_today.year, _today.month);
+
+  bool get _canBack => _month.isAfter(DateTime(_today.year, _today.month));
+  bool get _canNext => _month.isBefore(DateTime(_today.year, _today.month + _monthsAhead));
+
+  void _go(int delta) => setState(() => _month = DateTime(_month.year, _month.month + delta));
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final first = DateTime(_month.year, _month.month);
+    final daysInMonth = DateTime(_month.year, _month.month + 1, 0).day;
+    final lead = first.weekday - 1; // lunes primero
+    final cells = lead + daysInMonth;
+    final rows = (cells / 7).ceil();
+    final limit = DateTime(_today.year, _today.month + _monthsAhead + 1, 0);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 4, 8, 10),
+      decoration: BoxDecoration(
+        color: Pan.papel,
+        borderRadius: BorderRadius.circular(Pan.radio),
+        border: Border.all(color: const Color(0xFFEADCC4)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Mes anterior',
+                onPressed: _canBack ? () => _go(-1) : null,
+                icon: const Icon(Icons.chevron_left_rounded),
+                color: Pan.caramelo,
               ),
-              const SizedBox(height: 8),
-              Row(
+              Expanded(
+                child: AnimatedSwitcher(
+                  duration: Motion.of(context, Motion.rapido),
+                  child: Text(
+                    capitalize(DateFormat('MMMM yyyy', 'es_MX').format(_month)),
+                    key: ValueKey(_month),
+                    textAlign: TextAlign.center,
+                    style: theme.textTheme.titleMedium!
+                        .copyWith(fontFamily: 'Fraunces', fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Mes siguiente',
+                onPressed: _canNext ? () => _go(1) : null,
+                icon: const Icon(Icons.chevron_right_rounded),
+                color: Pan.caramelo,
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              for (final w in _weekdays)
+                Expanded(
+                  child: Center(
+                    child: Text(w,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Pan.canela)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          for (var r = 0; r < rows; r++)
+            Row(
+              children: [
+                for (var c = 0; c < 7; c++)
+                  Expanded(
+                    child: Builder(builder: (context) {
+                      final n = r * 7 + c - lead + 1;
+                      if (n < 1 || n > daysInMonth) return const SizedBox(height: 46);
+                      final d = DateTime(_month.year, _month.month, n);
+                      final key = dateKey(d);
+                      final past = d.isBefore(_today) || d.isAfter(limit);
+                      return _CalendarDay(
+                        day: n,
+                        selected: widget.picked.contains(key),
+                        today: d == _today,
+                        disabled: past,
+                        repartos: widget.repartos[key] ?? 0,
+                        onTap: past ? null : () => widget.onToggle(key),
+                      );
+                    }),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const _Dot(),
+              const SizedBox(width: 6),
+              Text('Ya tiene reparto', style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  final Color color;
+  const _Dot({this.color = Pan.caramelo});
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 5,
+        height: 5,
+        margin: const EdgeInsets.symmetric(horizontal: 1),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      );
+}
+
+class _CalendarDay extends StatelessWidget {
+  final int day;
+  final bool selected;
+  final bool today;
+  final bool disabled;
+  final int repartos;
+  final VoidCallback? onTap;
+  const _CalendarDay({
+    required this.day,
+    required this.selected,
+    required this.today,
+    required this.disabled,
+    required this.repartos,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: !disabled,
+      selected: selected,
+      label: '$day${repartos > 0 ? ', ya tiene $repartos ${repartos == 1 ? 'reparto' : 'repartos'}' : ''}',
+      child: Pressable(
+        onTap: onTap,
+        haptic: true,
+        child: SizedBox(
+          height: 46,
+          child: Center(
+            child: AnimatedContainer(
+              duration: Motion.of(context, Motion.rapido),
+              curve: Motion.curva,
+              width: 40,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: selected ? Pan.gradienteMiel : null,
+                borderRadius: BorderRadius.circular(14),
+                border: today && !selected ? Border.all(color: Pan.miel, width: 1.6) : null,
+                boxShadow: selected
+                    ? const [BoxShadow(color: Color(0x44E8960F), blurRadius: 10, offset: Offset(0, 4))]
+                    : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Expanded(child: Text('Semanas')),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(value: 1, label: Text('1')),
-                      ButtonSegment(value: 2, label: Text('2')),
-                      ButtonSegment(value: 4, label: Text('4')),
-                    ],
-                    selected: {_weeks},
-                    onSelectionChanged: (s) => setState(() => _weeks = s.first),
+                  Text(
+                    '$day',
+                    style: TextStyle(
+                      fontSize: 15.5,
+                      fontWeight: selected || today ? FontWeight.w900 : FontWeight.w600,
+                      color: disabled ? const Color(0xFFCDBCA6) : Pan.cacao,
+                    ),
+                  ),
+                  SizedBox(
+                    height: 7,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        for (var i = 0; i < repartos.clamp(0, 3); i++)
+                          _Dot(color: selected ? Pan.cacao : Pan.caramelo),
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ],
-            _SlotPicker(
-              start: _start,
-              end: _end,
-              every: _every,
-              onChanged: (start, end, every) => setState(() {
-                _start = start;
-                _end = end;
-                _every = every;
-              }),
             ),
-            const SizedBox(height: 8),
-            PickupPointFields(
-              key: _pointKey,
-              onChanged: (p) => setState(() => _point = p),
-              onModeChanged: (v) => setState(() => _special = v),
-            ),
-            if (widget.groups.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text('Cupo de panes por día (opcional)', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 10),
-              _StockFields(groups: widget.groups, controllers: _stock),
-            ],
-            const SizedBox(height: 4),
-            Text(
-              dates.isEmpty
-                  ? 'Elige al menos un día.'
-                  : _special && _point == null
-                      ? 'Escribe el nombre del lugar y márcalo en el mapa.'
-                      : 'Se ${dates.length == 1 ? 'abre 1 día' : 'abren ${dates.length} días'}${_point != null ? ' de entrega en ${_point!.name}' : ''}. '
-                          'Se puede pedir hasta que empieces a repartir o se acabe el cupo.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 12),
-            HoneyButton(
-              label: dates.isEmpty
-                  ? 'Abrir'
-                  : dates.length == 1
-                      ? 'Abrir 1 día'
-                      : 'Abrir ${dates.length} días',
-              icon: Icons.event_available_rounded,
-              busy: _busy,
-              onPressed: valid ? _save : null,
-            ),
-          ],
+          ),
         ),
       ),
     );

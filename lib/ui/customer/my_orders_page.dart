@@ -227,7 +227,7 @@ class _OrderCard extends StatelessWidget {
     // El día de la entrega se puede ver por dónde va el repartidor.
     final canTrack = !past &&
         o.isPending &&
-        (o.status == OrderStatus.enCamino || o.deliveryDate == dateKey(DateTime.now()));
+        (o.status == OrderStatus.enCamino || dayDateOf(o.deliveryDate) == dateKey(DateTime.now()));
     final isCash = o.paymentMethod == PaymentMethod.efectivo;
     return PanCard(
       margin: const EdgeInsets.symmetric(vertical: 7),

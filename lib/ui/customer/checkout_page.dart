@@ -385,7 +385,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
           )
         else
           SizedBox(
-            height: days.any((d) => d.isPickup) ? 136 : 118,
+            height: (days.any((d) => d.isPickup) ? 136 : 118) + (_sameDay(days) ? 16 : 0),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -395,6 +395,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 index: i + 1,
                 child: _DayCard(
                   day: days[i],
+                  // Si ese día hay dos repartos (p. ej. Acuity temprano y a domicilio
+                  // al mediodía), cada tarjeta dice a qué hora empieza.
+                  time: days.where((d) => d.day == days[i].day).length > 1
+                      ? 'Desde ${clockLabel(dayStartMinute(days[i]))}'
+                      : null,
                   fits: overLimit(days[i], stocks[days[i].date], need).isEmpty,
                   left: _leftFor(days[i], stocks[days[i].date], need),
                   selected: days[i].date == _date,
@@ -649,9 +654,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
   }
 }
 
+/// ¿Hay dos repartos el mismo día en la lista?
+bool _sameDay(List<DeliveryDay> days) => days.map((d) => d.day).toSet().length < days.length;
+
 /// Tarjetita de día: "LUN / 23 / nov". Se pinta de miel al elegirla.
 class _DayCard extends StatelessWidget {
   final DeliveryDay day;
+
+  /// "Desde 7:45" cuando ese día hay más de un reparto.
+  final String? time;
   final bool selected;
   final VoidCallback onTap;
 
@@ -664,6 +675,7 @@ class _DayCard extends StatelessWidget {
     required this.day,
     required this.selected,
     required this.onTap,
+    this.time,
     this.fits = true,
     this.left,
   });
@@ -704,6 +716,15 @@ class _DayCard extends StatelessWidget {
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: selected ? Pan.tostado : Pan.canela)),
+            if (time != null)
+              Text(
+                time!,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                  color: selected ? Pan.cacao : Pan.tostado,
+                ),
+              ),
             if (day.pickup != null)
               Padding(
                 padding: const EdgeInsets.only(top: 3, left: 4, right: 4),

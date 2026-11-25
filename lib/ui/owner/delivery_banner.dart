@@ -52,42 +52,88 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// Hoy puede haber varios repartos (Acuity a las 7:45, a domicilio al
+  /// mediodía…): si hay pedidos en más de uno, el dueño elige cuál empieza.
+  Future<String?> _pickReparto(List<BakeryOrder> pending) async {
+    final ids = pending.map((o) => o.deliveryDate).toSet();
+    if (ids.length == 1) return ids.single;
+    final days = (await Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())).first)
+        .where((d) => ids.contains(d.date))
+        .toList()
+      ..sort(compareDays);
+    final known = days.map((d) => d.date).toSet();
+    if (!mounted) return null;
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('¿Qué reparto empiezas?'),
+        children: [
+          for (final (id, label) in [
+            for (final d in days) (d.date, repartoShort(d)),
+            for (final id in ids.where((i) => !known.contains(i))) (id, 'Otro reparto'),
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, id),
+              child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.delivery_dining_rounded, color: Pan.caramelo),
+                title: Text(label, style: const TextStyle(fontWeight: FontWeight.w800)),
+                subtitle: Text(() {
+                  final n = pending.where((o) => o.deliveryDate == id).length;
+                  return '$n ${n == 1 ? 'pedido' : 'pedidos'}';
+                }()),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _start({bool resume = false}) async {
     setState(() => _busy = true);
     try {
       final problem = await DeliveryTracker.checkPermission();
       if (problem != null) return _toast(problem);
 
-      final pending = await DeliveryTracker.pendingToday();
-      if (pending.isEmpty) return _toast('No hay pedidos pendientes para hoy.');
-
-      if (!resume) {
-        final confirmed = pending.where((o) => o.status == OrderStatus.confirmado).length;
-        final unconfirmed = pending.where((o) => o.status == OrderStatus.recibido).length;
-        if (!mounted) return;
-        final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('¿Empezar a repartir?'),
-            content: Text(
-              'Tus ${pending.length} clientes de hoy podrán ver en el mapa por dónde vas, '
-              'y les llegará un aviso cuando estés cerca.\n\n'
-              '${confirmed > 0 ? '$confirmed pedidos confirmados pasan a "En camino".\n' : ''}'
-              '${unconfirmed > 0 ? '$unconfirmed pedidos siguen sin confirmar.\n' : ''}'
-              '\nSe cierran los pedidos para hoy. '
-              'Verás una notificación fija mientras compartes. '
-              'Al entregar el último pedido se deja de compartir solo.',
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
-              FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sí, salir')),
-            ],
-          ),
-        );
-        if (ok != true) return;
-      }
       final cfg = await Repo.instance.config().first;
-      await _tracker.start(alertMeters: cfg.nearAlertMeters, resume: resume);
+      if (resume) {
+        final info = await Repo.instance.tracking().first;
+        final day = info.date.isEmpty ? dateKey(DateTime.now()) : info.date;
+        await _tracker.start(day: day, alertMeters: cfg.nearAlertMeters, resume: true);
+        return;
+      }
+
+      final all = await DeliveryTracker.pendingToday();
+      if (all.isEmpty) return _toast('No hay pedidos pendientes para hoy.');
+      final day = await _pickReparto(all);
+      if (day == null) return;
+      final pending = all.where((o) => o.deliveryDate == day).toList();
+      final several = all.length != pending.length;
+
+      final confirmed = pending.where((o) => o.status == OrderStatus.confirmado).length;
+      final unconfirmed = pending.where((o) => o.status == OrderStatus.recibido).length;
+      if (!mounted) return;
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('¿Empezar a repartir?'),
+          content: Text(
+            'Tus ${pending.length} clientes ${several ? 'de este reparto' : 'de hoy'} podrán ver en el mapa por dónde vas, '
+            'y les llegará un aviso cuando estés cerca.\n\n'
+            '${confirmed > 0 ? '$confirmed pedidos confirmados pasan a "En camino".\n' : ''}'
+            '${unconfirmed > 0 ? '$unconfirmed pedidos siguen sin confirmar.\n' : ''}'
+            '\nSe cierran los pedidos ${several ? 'de este reparto' : 'para hoy'}. '
+            'Verás una notificación fija mientras compartes. '
+            'Al entregar el último pedido se deja de compartir solo.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sí, salir')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+      await _tracker.start(day: day, alertMeters: cfg.nearAlertMeters);
     } catch (e) {
       _toast('No se pudo empezar el reparto ($e)');
     } finally {

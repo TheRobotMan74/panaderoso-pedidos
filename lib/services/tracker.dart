@@ -64,11 +64,11 @@ class DeliveryTracker extends ChangeNotifier {
     return null;
   }
 
-  /// Pedidos de hoy que faltan por entregar.
+  /// Pedidos de hoy que faltan por entregar (de todos los repartos de hoy).
   static Future<List<BakeryOrder>> pendingToday() async {
     final today = dateKey(DateTime.now());
     final orders = await Repo.instance.ordersFrom(today).first;
-    return _pendingOn(orders, today);
+    return orders.where((o) => dayDateOf(o.deliveryDate) == today && o.isPending).toList();
   }
 
   static List<BakeryOrder> _pendingOn(List<BakeryOrder> orders, String date) =>
@@ -77,16 +77,17 @@ class DeliveryTracker extends ChangeNotifier {
   static List<String> _viewersOf(List<BakeryOrder> orders) =>
       orders.map((o) => o.customerId).toSet().toList()..sort();
 
-  /// Empieza a compartir. Los pedidos confirmados de hoy pasan a "En camino"
-  /// (eso ya le manda aviso a cada cliente).
+  /// Empieza a compartir el reparto [day] (id del día; hoy puede haber varios,
+  /// por ejemplo Acuity a las 7:45 y a domicilio al mediodía). Sus pedidos
+  /// confirmados pasan a "En camino" (eso ya le manda aviso a cada cliente).
   /// Con [resume] solo reanuda un reparto que quedó abierto, sin cambiar pedidos.
-  Future<void> start({required int alertMeters, bool resume = false}) async {
+  Future<void> start({required String day, required int alertMeters, bool resume = false}) async {
     if (running) return;
-    final today = dateKey(DateTime.now());
-    final pending = await pendingToday();
+    final today = day;
+    final pending = _pendingOn(await Repo.instance.ordersFrom(dayDateOf(day)).first, day);
     _viewers = _viewersOf(pending);
 
-    // Desde que sale a repartir ya no se aceptan pedidos para hoy.
+    // Desde que sale a repartir ya no se aceptan pedidos para este reparto.
     await Repo.instance.closeDeliveryDay(today).catchError((_) {});
 
     if (!resume) {
@@ -117,17 +118,18 @@ class DeliveryTracker extends ChangeNotifier {
       _cfg = c;
       _updateAhead();
     }, onError: (_) {});
-    _days = Repo.instance.deliveryDays(fromDate: today).listen((days) {
+    _days = Repo.instance.deliveryDays(fromDate: dayDateOf(today)).listen((days) {
       _day = days.where((d) => d.date == today).firstOrNull;
       _updateAhead();
     }, onError: (_) {});
-    _orders = Repo.instance.ordersFrom(today).listen((orders) {
-      _todayOrders = orders.where((o) => o.deliveryDate == today && o.status != OrderStatus.cancelado).toList();
+    _orders = Repo.instance.ordersFrom(dayDateOf(today)).listen((orders) {
+      _todayOrders =
+          orders.where((o) => o.deliveryDate == today && o.status != OrderStatus.cancelado).toList();
       _updateAhead();
       final viewers = _viewersOf(_pendingOn(orders, today));
       if (viewers.isEmpty) {
-        stop().then((_) => onAutoStop?.call(
-            'Entregaste todo lo de hoy. Dejamos de compartir tu ubicación.'));
+        stop().then((_) =>
+            onAutoStop?.call('Entregaste todo lo de este reparto. Dejamos de compartir tu ubicación.'));
         return;
       }
       if (!listEquals(viewers, _viewers)) {
