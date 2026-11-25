@@ -37,7 +37,7 @@ class GiftTag extends StatelessWidget {
 }
 
 /// Tarjeta de lealtad del cliente: "7 de 10", con un punto por pieza que suma
-/// (normalmente solo chocolatines).
+/// (normalmente chocolatín y croissants).
 /// También avisa del pan de bienvenida si todavía no ha pedido.
 /// No se muestra nada si el dueño apagó las dos promociones.
 class LoyaltyCardView extends StatelessWidget {
@@ -115,7 +115,7 @@ class LoyaltyCardView extends StatelessWidget {
                 pending > 0
                     ? '¡Ya te ganaste $pending $name! Va gratis en tu siguiente pedido.'
                     : 'Cada $goal $what que compras, 1 $name gratis. Te faltan ${card.missing}. '
-                        'Solo suman ${what.startsWith('piezas de ') ? 'esos panes' : 'los $what'}.',
+                        'Solo suman esos panes.',
                 style: theme.textTheme.bodySmall,
               ),
             ],

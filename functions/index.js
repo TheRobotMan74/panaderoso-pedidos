@@ -217,7 +217,7 @@ function stockLabel(productId, product) {
 // ---------------------------------------------------------------------------
 // Igual que lib/logic/promos.dart. Aquí es donde de verdad se pone el pan gratis.
 // - Lealtad: cada `meta` piezas compradas de los panes que suman (`suman`; si no
-//   eligió ninguno, solo el chocolatín), desde que salió la promo y sin contar
+//   eligió ninguno, chocolatín y croissants), desde que salió la promo y sin contar
 //   pedidos cancelados = 1 pan gratis, que va en el pedido que llega a la meta.
 // - Bienvenida: 1 pan gratis en el primer pedido de la cuenta, si lleva al menos
 //   `minimo` piezas. Uno por cuenta y uno por domicilio.
@@ -233,7 +233,7 @@ function reglasPromo(config) {
     bienvenida: p.welcomeEnabled !== false,
     minimo: entero(p.welcomeMinPieces, 2, 1, 50),
     productoId: typeof p.giftProductId === 'string' ? p.giftProductId : '',
-    // Panes que suman a la tarjeta. Vacío = solo el chocolatín.
+    // Panes que suman a la tarjeta. Vacío = chocolatín y croissants (donas no).
     suman: Array.isArray(p.loyaltyProductIds)
       ? p.loyaltyProductIds.filter((x) => typeof x === 'string' && x) : [],
   };
@@ -247,7 +247,7 @@ function piezasLealtad(reglas, items) {
     if (it.regalo) continue;
     const ok = reglas.suman.length
       ? reglas.suman.includes(it.productId)
-      : sinAcentos(it.name).includes('chocolat');
+      : /chocolat|croissant|cuernito/.test(sinAcentos(it.name));
     if (ok) n += Number(it.qty) || 0;
   }
   return n;

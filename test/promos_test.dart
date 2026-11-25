@@ -137,7 +137,22 @@ void main() {
     expect(list[2].card.pieces, 0);
   });
 
-  test('solo suman los chocolatines', () {
+  test('los croissants también suman, las donas no', () {
+    final items = [
+      const OrderItem(productId: 'jyq', name: 'Croissant jamón y queso', price: 35, qty: 2),
+      const OrderItem(productId: 'piz', name: 'Croissant de pizza', price: 35, qty: 1),
+      ..._cart(1, 4),
+    ];
+    expect(loyaltyPiecesOf(rules, items), 4);
+    final ps = [
+      const Product(id: 'choco', name: 'Chocolatín', price: 30),
+      const Product(id: 'piz', name: 'Croissant de pizza', price: 35),
+      const Product(id: 'dona', name: 'Dona', price: 20),
+    ];
+    expect(loyaltyProducts(rules, ps).map((p) => p.id), ['choco', 'piz']);
+  });
+
+  test('solo suman los chocolatines (y croissants)', () {
     final card = LoyaltyCard.from([_order(2, donas: 8)], rules);
     expect(card.pieces, 2);
     expect(card.progress, 2);

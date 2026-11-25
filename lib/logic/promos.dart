@@ -18,7 +18,7 @@ class PromoRules {
   final bool loyaltyEnabled;
   final int loyaltyGoal;
 
-  /// Qué panes suman a la tarjeta. Vacío = solo el chocolatín.
+  /// Qué panes suman a la tarjeta. Vacío = chocolatín y croissants.
   final List<String> loyaltyProductIds;
 
   /// Pan gratis en el primer pedido, si lleva al menos [welcomeMinPieces] piezas.
@@ -83,13 +83,17 @@ Product? giftProduct(PromoRules r, List<Product> products) {
   return p != null && p.available ? p : null;
 }
 
-bool _isChocolatin(String name) => _plain(name).contains('chocolat');
+/// Lo normal: suman el chocolatín y los croissants (jamón y queso, pizza…). Las donas no.
+bool _countsByDefault(String name) {
+  final n = _plain(name);
+  return n.contains('chocolat') || n.contains('croissant') || n.contains('cuernito');
+}
 
 /// true si este pan comprado suma a la tarjeta de lealtad (los regalados nunca suman).
 bool countsForLoyalty(PromoRules r, OrderItem i) =>
     !i.isGift &&
     i.qty > 0 &&
-    (r.loyaltyProductIds.isEmpty ? _isChocolatin(i.name) : r.loyaltyProductIds.contains(i.productId));
+    (r.loyaltyProductIds.isEmpty ? _countsByDefault(i.name) : r.loyaltyProductIds.contains(i.productId));
 
 /// Piezas de un pedido (o carrito) que suman a la tarjeta.
 int loyaltyPiecesOf(PromoRules r, Iterable<OrderItem> items) =>
@@ -97,13 +101,13 @@ int loyaltyPiecesOf(PromoRules r, Iterable<OrderItem> items) =>
 
 /// Los panes que suman a la tarjeta, de [products] (el catálogo).
 List<Product> loyaltyProducts(PromoRules r, List<Product> products) => r.loyaltyProductIds.isEmpty
-    ? products.where((p) => _isChocolatin(p.name)).toList()
+    ? products.where((p) => _countsByDefault(p.name)).toList()
     : products.where((p) => r.loyaltyProductIds.contains(p.id)).toList();
 
-/// Cómo se le dice al cliente qué suma: "chocolatines" o "piezas de Dona o Concha".
+/// Cómo se le dice al cliente qué suma: "piezas de Chocolatín, Croissant de pizza o …".
 String loyaltyWhat(PromoRules r, List<Product> products) {
   final ps = loyaltyProducts(r, products);
-  if (r.loyaltyProductIds.isEmpty || ps.isEmpty) return 'chocolatines';
+  if (ps.isEmpty) return 'chocolatines o croissants';
   final names = ps.map((p) => p.name).toList();
   final joined =
       names.length == 1 ? names.first : '${names.sublist(0, names.length - 1).join(', ')} o ${names.last}';
@@ -113,7 +117,7 @@ String loyaltyWhat(PromoRules r, List<Product> products) {
 /// Avance de la tarjeta de lealtad de un cliente, a partir de sus pedidos.
 /// Solo cuentan los pedidos hechos desde que salió la promoción (los que traen
 /// `lealtadPiezas`), que no están cancelados, y de ellos solo los panes que suman
-/// (ver [countsForLoyalty]; normalmente el chocolatín).
+/// (ver [countsForLoyalty]; normalmente chocolatín y croissants).
 ///
 /// Se recorre en orden: cada pedido suma sus piezas y cada pan de lealtad que se
 /// le dio resta una tarjeta llena. Si se le dio un pan cuando contaba cualquier

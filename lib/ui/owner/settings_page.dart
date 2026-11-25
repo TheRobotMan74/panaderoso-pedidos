@@ -54,7 +54,7 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _welcomeMin = TextEditingController(text: widget.initial.promos.welcomeMinPieces.toString());
   late String _giftId = widget.initial.promos.giftProductId;
 
-  /// Panes que suman a la tarjeta. Vacío = solo el chocolatín (lo normal).
+  /// Panes que suman a la tarjeta. Vacío = chocolatín y croissants (lo normal).
   late Set<String> _loyaltyIds = widget.initial.promos.loyaltyProductIds.toSet();
 
   Future<void> _pickBase() async {
@@ -297,7 +297,7 @@ class _SettingsFormState extends State<_SettingsForm> {
           stream: Repo.instance.products(),
           builder: (context, snap) {
             final products = snap.data ?? const <Product>[];
-            // Sin elegir nada = los chocolatines; se ven marcados para que quede claro.
+            // Sin elegir nada = chocolatín y croissants; se ven marcados para que quede claro.
             final shown = _loyaltyIds.isEmpty
                 ? loyaltyProducts(const PromoRules(), products).map((p) => p.id).toSet()
                 : _loyaltyIds;
@@ -309,7 +309,7 @@ class _SettingsFormState extends State<_SettingsForm> {
                   Text('Panes que suman a la tarjeta', style: theme.textTheme.titleSmall),
                   const SizedBox(height: 2),
                   Text(
-                    'Normalmente solo el chocolatín. Si quitas todos, vuelve a contar solo el chocolatín.',
+                    'Normalmente chocolatín y croissants. Si quitas todos, vuelven a sumar esos.',
                     style: theme.textTheme.bodySmall,
                   ),
                   const SizedBox(height: 8),
@@ -329,7 +329,7 @@ class _SettingsFormState extends State<_SettingsForm> {
                                     final auto = loyaltyProducts(const PromoRules(), products)
                                         .map((x) => x.id)
                                         .toSet();
-                                    // Si quedó igual que lo normal, se guarda vacío (= chocolatín).
+                                    // Si quedó igual que lo normal, se guarda vacío.
                                     _loyaltyIds = next.length == auto.length && next.containsAll(auto)
                                         ? <String>{}
                                         : next;

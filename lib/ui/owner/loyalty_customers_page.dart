@@ -64,7 +64,7 @@ class _LoyaltyCustomersPageState extends State<LoyaltyCustomersPage> {
                   children: [
                     Text(
                       rules.loyaltyProductIds.isEmpty
-                          ? 'Solo suman los chocolatines comprados desde que salió la promoción. '
+                          ? 'Solo suman chocolatines y croissants comprados desde que salió la promoción. '
                               '1 pan gratis cada $goal. Los panes que ya se regalaron no se quitan.'
                           : 'Solo suman los panes que elegiste en Ajustes, comprados desde que salió '
                               'la promoción. 1 pan gratis cada $goal. Los que ya se regalaron no se quitan.',
