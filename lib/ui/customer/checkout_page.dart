@@ -389,9 +389,12 @@ class _CheckoutPageState extends State<CheckoutPage> {
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
-              itemCount: days.length,
+              // La última tarjeta es "Otro día", para sugerir uno que no esté abierto.
+              itemCount: days.length + 1,
               separatorBuilder: (_, _) => const SizedBox(width: 10),
-              itemBuilder: (context, i) => FadeSlideIn(
+              itemBuilder: (context, i) => i == days.length
+                  ? FadeSlideIn(index: i + 1, child: _OtherDayCard(onTap: _suggestDay))
+                  : FadeSlideIn(
                 index: i + 1,
                 child: _DayCard(
                   day: days[i],
@@ -412,12 +415,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
             ),
           ),
         if (days.isNotEmpty)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: _suggestDay,
-              icon: const Icon(Icons.edit_calendar_rounded, size: 18),
-              label: const Text('¿Ningún día te acomoda? Sugiere uno'),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              '¿Ningún día te acomoda? Toca "Otro día" y dinos cuándo lo quieres.',
+              style: theme.textTheme.bodySmall?.copyWith(color: Pan.canela),
             ),
           ),
         AnimatedSize(
@@ -458,6 +460,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
         if (pickup != null) ...[
           const SectionTitle('Entregar en'),
           PickupDayNotice(day: day!, showDate: false),
+        ] else if (day == null && days.isNotEmpty && days.every((d) => d.isPickup)) ...[
+          // Todos los días abiertos son de punto fijo: no tiene caso mostrar su casa.
+          const SectionTitle('Entregar en'),
+          const PanCard(
+            child: Row(
+              children: [
+                Text('📍', style: TextStyle(fontSize: 24)),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text('Estos días se entrega en un punto fijo. Elige el día para ver el lugar.'),
+                ),
+              ],
+            ),
+          ),
         ] else ...[
           const SectionTitle('Entregar en'),
           if (dest != null)
@@ -658,6 +674,47 @@ class _CheckoutPageState extends State<CheckoutPage> {
 bool _sameDay(List<DeliveryDay> days) => days.map((d) => d.day).toSet().length < days.length;
 
 /// Tarjetita de día: "LUN / 23 / nov". Se pinta de miel al elegirla.
+/// Tarjeta al final de la fila de días para sugerir otro día y hora.
+class _OtherDayCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _OtherDayCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Pressable(
+      onTap: onTap,
+      haptic: true,
+      child: Container(
+        width: 78,
+        decoration: BoxDecoration(
+          color: Pan.papel,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Pan.caramelo.withValues(alpha: 0.55), width: 1.4),
+          boxShadow: Pan.sombra,
+        ),
+        child: const Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.edit_calendar_rounded, color: Pan.caramelo, size: 28),
+            SizedBox(height: 6),
+            Text(
+              'Otro\ndía',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Pan.cacao, height: 1.15),
+            ),
+            SizedBox(height: 3),
+            Text(
+              'Sugiere uno',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Pan.caramelo),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _DayCard extends StatelessWidget {
   final DeliveryDay day;
 
