@@ -180,6 +180,7 @@ GiftPreview previewGifts({
   required PromoRules rules,
   required List<BakeryOrder> myOrders,
   required List<OrderItem> items,
+  bool pickupDay = false,
 }) {
   final paidPieces = items.where((i) => !i.isGift).fold(0, (s, i) => s + i.qty);
   if (paidPieces <= 0) return const GiftPreview();
@@ -188,12 +189,20 @@ GiftPreview previewGifts({
     final card = LoyaltyCard.from(myOrders, rules);
     loyalty = min(10, (card.balance + loyaltyPiecesOf(rules, items)) ~/ rules.loyaltyGoal);
   }
-  final welcome = rules.welcomeEnabled && paidPieces >= rules.welcomeMinPieces && isFirstOrder(myOrders);
+  // En los días especiales (entrega en un punto) no hay pan de bienvenida:
+  // se queda guardado para su primer pedido a domicilio.
+  final welcome = !pickupDay &&
+      rules.welcomeEnabled &&
+      paidPieces >= rules.welcomeMinPieces &&
+      isFirstOrder(myOrders);
   return GiftPreview(loyalty: loyalty, welcome: welcome);
 }
 
-/// true si el cliente todavía no tiene ningún pedido (sin contar cancelados).
-bool isFirstOrder(List<BakeryOrder> myOrders) => myOrders.every((o) => o.status == OrderStatus.cancelado);
+/// true si el cliente todavía no tiene ningún pedido a domicilio (sin contar
+/// cancelados). Los de días especiales no cuentan: el pan de bienvenida sigue
+/// esperándolo para su primer pedido a domicilio.
+bool isFirstOrder(List<BakeryOrder> myOrders) =>
+    myOrders.every((o) => o.status == OrderStatus.cancelado || o.isPickup);
 
 /// Tarjeta de un cliente vista desde el panel del dueño.
 class CustomerLoyalty {

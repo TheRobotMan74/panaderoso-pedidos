@@ -86,6 +86,7 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
                   // Se puede cambiar a dónde llega mientras no salga el reparto de ese día.
                   canChangeAddress: daysSnap.hasData &&
                       !closed.contains(o.deliveryDate) &&
+                      !o.isPickup &&
                       (o.status == OrderStatus.recibido || o.status == OrderStatus.confirmado),
                 ),
               if (past.isNotEmpty) const SectionTitle('Pedidos anteriores'),

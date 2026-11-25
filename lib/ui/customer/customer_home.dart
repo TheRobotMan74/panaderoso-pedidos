@@ -12,11 +12,13 @@ import '../format.dart';
 import '../product_image.dart';
 import '../promo_widgets.dart';
 import '../profile_page.dart';
+import '../pickup_widgets.dart';
 import '../push_reminder.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'checkout_page.dart';
+import 'day_request_sheet.dart';
 import 'my_orders_page.dart';
 import 'product_detail_page.dart';
 import '../../services/push.dart';
@@ -57,6 +59,8 @@ class _CustomerHomeState extends State<CustomerHome> {
       );
     } else if (v == 'idea') {
       showSuggestSheet(context, widget.user);
+    } else if (v == 'dia') {
+      showDayRequestSheet(context, widget.user);
     } else if (v == 'salir') {
       signOutAndForgetPush();
     }
@@ -84,6 +88,14 @@ class _CustomerHomeState extends State<CustomerHome> {
             offset: const Offset(0, 52),
             onSelected: _openMenu,
             itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: 'dia',
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.edit_calendar_rounded),
+                  title: Text('Sugerir día y hora'),
+                ),
+              ),
               PopupMenuItem(
                 value: 'idea',
                 child: ListTile(
@@ -309,7 +321,11 @@ class _Catalog extends StatelessWidget {
                   index: i,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [const FeaturedReviews(), SuggestBreadCard(user: user)],
+                    children: [
+                      const FeaturedReviews(),
+                      DayRequestCard(user: user),
+                      SuggestBreadCard(user: user),
+                    ],
                   ),
                 );
               }
@@ -391,12 +407,58 @@ class _Welcome extends StatelessWidget {
           ReviewPrompt(user: user),
           LoyaltyCardView(uid: user.uid),
           const _NextDayStock(),
+          const _PickupDays(),
+          _NoDaysCard(user: user),
           const SizedBox(height: 6),
           const SectionTitle('Nuestro pan'),
         ],
       ),
     );
   }
+}
+
+/// Si no hay ningún día abierto, arriba sale "Todavía no hay días abiertos: sugiere uno".
+class _NoDaysCard extends StatelessWidget {
+  final AppUser user;
+  const _NoDaysCard({required this.user});
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<DeliveryDay>>(
+        stream: Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())),
+        builder: (context, snap) {
+          final none = snap.hasData && orderableDays(snap.data!, DateTime.now()).isEmpty;
+          return AnimatedSize(
+            duration: Motion.of(context, Motion.medio),
+            curve: Motion.curva,
+            alignment: Alignment.topCenter,
+            child: none ? DayRequestCard(user: user, noDays: true) : const SizedBox(width: double.infinity),
+          );
+        },
+      );
+}
+
+/// Días especiales que vienen: "Viernes 28: entrega en FIME, no a domicilio".
+class _PickupDays extends StatelessWidget {
+  const _PickupDays();
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<DeliveryDay>>(
+        stream: Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now())),
+        builder: (context, snap) {
+          final days = upcomingPickupDays(snap.data ?? const [], DateTime.now());
+          return AnimatedSize(
+            duration: Motion.of(context, Motion.medio),
+            curve: Motion.curva,
+            alignment: Alignment.topCenter,
+            child: Column(
+              children: [
+                for (final d in days.take(3))
+                  PickupDayNotice(day: d, margin: const EdgeInsets.only(top: 12)),
+              ],
+            ),
+          );
+        },
+      );
 }
 
 /// Contador en vivo del próximo día de entrega: "Para el lunes 23 quedan 40 panes".

@@ -11,11 +11,13 @@ import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../order_placed.dart';
+import '../pickup_widgets.dart';
 import '../product_image.dart';
 import '../promo_widgets.dart';
 import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'day_request_sheet.dart';
 import 'addresses.dart';
 
 /// Confirmar pedido: día, horario, forma de pago y captura de transferencia.
@@ -76,13 +78,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
       }
       final u = widget.user;
       final dest = _dest;
+      // Día especial: todos se entregan en el mismo lugar (el servidor también lo pone).
+      final point = day.pickup;
       final gifts = await Repo.instance.createOrder(BakeryOrder(
         id: '',
         customerId: u.uid,
         customerName: u.name,
         phone: u.phone,
-        address: dest?.address ?? u.address,
-        addressNotes: dest?.notes ?? u.addressNotes,
+        address: point?.label ?? dest?.address ?? u.address,
+        addressNotes: point?.notes ?? dest?.notes ?? u.addressNotes,
         items: widget.cart.items,
         deliveryDate: day.date,
         slot: _slot!,
@@ -92,8 +96,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
         // el servidor hace la misma cuenta y guarda la suya.
         shippingFee: _fee,
         notes: _notes.text.trim(),
-        lat: dest != null ? dest.lat : u.lat,
-        lng: dest != null ? dest.lng : u.lng,
+        lat: point?.lat ?? (dest != null ? dest.lat : u.lat),
+        lng: point?.lng ?? (dest != null ? dest.lng : u.lng),
       ));
       if (!mounted) {
         widget.cart.clear();
@@ -120,6 +124,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
       );
     }
   }
+
+  /// Sugerir otro día, con lo que trae en el carrito como el pan que quiere.
+  void _suggestDay() => showDayRequestSheet(
+        context,
+        widget.user,
+        items: {for (final i in widget.cart.items) i.name: i.qty},
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -177,7 +188,8 @@ class _CheckoutPageState extends State<CheckoutPage> {
     final d = Motion.of(context, Motion.medio);
     final u = widget.user;
     final dest = _dest;
-    _fee = cfg.shipping.feeForTrip(
+    final pickup = day?.pickup;
+    _fee = pickup != null ? 0 : cfg.shipping.feeForTrip(
       baseLat: cfg.baseLat,
       baseLng: cfg.baseLng,
       homeLat: dest != null ? dest.lat : u.lat,
@@ -191,8 +203,19 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _giftName = gift?.name;
     final preview = gift == null || myOrders == null
         ? const GiftPreview()
-        : previewGifts(rules: cfg.promos, myOrders: myOrders, items: cart.items);
+        : previewGifts(
+            rules: cfg.promos,
+            myOrders: myOrders,
+            items: cart.items,
+            pickupDay: pickup != null,
+          );
+    // Día especial: avisar que el regalo de bienvenida no se pierde.
+    final welcomeSaved = pickup != null &&
+        gift != null &&
+        myOrders != null &&
+        previewGifts(rules: cfg.promos, myOrders: myOrders, items: cart.items).welcome;
     final welcomeMissing = gift != null &&
+            pickup == null &&
             myOrders != null &&
             cfg.promos.welcomeEnabled &&
             isFirstOrder(myOrders) &&
@@ -269,6 +292,17 @@ class _CheckoutPageState extends State<CheckoutPage> {
                       ],
                     ),
                   ),
+                if (welcomeSaved)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '🎁 Tu ${gift.name} de bienvenida se guarda para tu primer pedido a domicilio',
+                        style: theme.textTheme.bodySmall?.copyWith(color: Pan.salvia),
+                      ),
+                    ),
+                  ),
                 if (welcomeMissing > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
@@ -326,34 +360,32 @@ class _CheckoutPageState extends State<CheckoutPage> {
           ),
         ),
 
-        // ----- Dirección -----
-        const SectionTitle('Entregar en'),
-        if (dest != null)
-          PanCard(
-            padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
-            onTap: _chooseAddress,
-            child: AddressSummary(
-              address: dest,
-              main: dest.id == u.addresses.firstOrNull?.id,
-              trailing: TextButton(onPressed: _chooseAddress, child: const Text('Cambiar')),
-            ),
-          ),
-
         // ----- Día y horario -----
-        const SectionTitle('¿Qué día te lo llevamos?'),
+        const SectionTitle('¿Qué día lo quieres?'),
         if (days.isEmpty)
-          const PanCard(
-            child: Row(
+          PanCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('🗓️', style: TextStyle(fontSize: 28)),
-                SizedBox(width: 12),
-                Expanded(child: Text('Por ahora no hay días de entrega abiertos. Vuelve pronto.')),
+                const Row(
+                  children: [
+                    Text('🗓️', style: TextStyle(fontSize: 28)),
+                    SizedBox(width: 12),
+                    Expanded(child: Text('Por ahora no hay días de entrega abiertos.')),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                FilledButton.tonalIcon(
+                  onPressed: _suggestDay,
+                  icon: const Icon(Icons.edit_calendar_rounded),
+                  label: const Text('Sugerir un día y hora'),
+                ),
               ],
             ),
           )
         else
           SizedBox(
-            height: 118,
+            height: days.any((d) => d.isPickup) ? 136 : 118,
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
               clipBehavior: Clip.none,
@@ -372,6 +404,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   }),
                 ),
               ),
+            ),
+          ),
+        if (days.isNotEmpty)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _suggestDay,
+              icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+              label: const Text('¿Ningún día te acomoda? Sugiere uno'),
             ),
           ),
         AnimatedSize(
@@ -408,6 +449,24 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
         ),
 
+        // ----- Dirección (o el lugar del día especial) -----
+        if (pickup != null) ...[
+          const SectionTitle('Entregar en'),
+          PickupDayNotice(day: day!, showDate: false),
+        ] else ...[
+          const SectionTitle('Entregar en'),
+          if (dest != null)
+            PanCard(
+              padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+              onTap: _chooseAddress,
+              child: AddressSummary(
+                address: dest,
+                main: dest.id == u.addresses.firstOrNull?.id,
+                trailing: TextButton(onPressed: _chooseAddress, child: const Text('Cambiar')),
+              ),
+            ),
+        ],
+
         // ----- Pago -----
         const SectionTitle('¿Cómo vas a pagar?'),
         Row(
@@ -442,9 +501,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         const SizedBox(height: 16),
         TextField(
           controller: _notes,
-          decoration: const InputDecoration(
-            labelText: 'Notas para la entrega (opcional)',
-            prefixIcon: Icon(Icons.edit_note_rounded),
+          decoration: InputDecoration(
+            labelText: pickup != null ? 'Notas (opcional, ej. cómo te reconocemos)' : 'Notas para la entrega (opcional)',
+            prefixIcon: const Icon(Icons.edit_note_rounded),
           ),
         ),
         const SizedBox(height: 22),
@@ -645,6 +704,20 @@ class _DayCard extends StatelessWidget {
                     fontSize: 12.5,
                     fontWeight: FontWeight.w700,
                     color: selected ? Pan.tostado : Pan.canela)),
+            if (day.pickup != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+                child: Text(
+                  '📍 ${day.pickup!.name}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: selected ? Pan.cacao : Pan.caramelo,
+                  ),
+                ),
+              ),
             if (!fits || left != null)
               Padding(
                 padding: const EdgeInsets.only(top: 3),

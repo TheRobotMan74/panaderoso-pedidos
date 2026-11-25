@@ -22,6 +22,10 @@ class AppUser {
   /// (para no volver a preguntarle por ese mismo pedido).
   final String? reviewSkipped;
 
+  /// Si tiene prendidas las notificaciones en su celular: true sí, false no,
+  /// null = todavía no sabemos (no ha abierto una versión que lo revise).
+  final bool? pushOk;
+
   const AppUser({
     required this.uid,
     required this.name,
@@ -33,6 +37,7 @@ class AppUser {
     this.lng,
     this.reviewSkipped,
     this.savedAddresses = const [],
+    this.pushOk,
   });
 
   /// Direcciones guardadas (de 1 a [maxAddresses]). La primera es la principal
@@ -66,6 +71,7 @@ class AppUser {
         lat: (m['lat'] as num?)?.toDouble(),
         lng: (m['lng'] as num?)?.toDouble(),
         reviewSkipped: m['reviewSkipped'] as String?,
+        pushOk: m['pushOk'] as bool?,
         savedAddresses: [
           for (final a in (m['addresses'] as List? ?? const []))
             if (a is Map) SavedAddress.fromMap(Map<String, dynamic>.from(a)),
@@ -214,6 +220,13 @@ class DeliveryDay {
   /// el día desde el calendario no lo borre.
   final List<String> routeOrder;
 
+  /// Día especial: todos los pedidos se entregan en este lugar (por ejemplo FIME)
+  /// y no a domicilio. Null = día normal a domicilio.
+  final PickupPoint? pickup;
+
+  /// El dueño ya avisó (o la app detectó) que llegó al punto de entrega.
+  final bool arrived;
+
   const DeliveryDay({
     required this.date,
     required this.open,
@@ -222,7 +235,11 @@ class DeliveryDay {
     this.closed = false,
     this.stock = const {},
     this.routeOrder = const [],
+    this.pickup,
+    this.arrived = false,
   });
+
+  bool get isPickup => pickup != null;
 
   factory DeliveryDay.fromMap(String id, Map<String, dynamic> m) => DeliveryDay(
         date: id,
@@ -232,6 +249,8 @@ class DeliveryDay {
         closed: m['closed'] as bool? ?? false,
         stock: _intMap(m['stock']),
         routeOrder: List<String>.from(m['routeOrder'] as List? ?? const []),
+        pickup: PickupPoint.fromMap(m['punto']),
+        arrived: m['llegue'] as bool? ?? false,
       );
 
   Map<String, dynamic> toMap() => {
@@ -240,7 +259,42 @@ class DeliveryDay {
         'slotMinutes': slotMinutes,
         'closed': closed,
         'stock': stock,
+        'punto': pickup?.toMap(),
       };
+}
+
+/// Lugar fijo de entrega de un día especial (FIME, una oficina…).
+/// Se guarda en deliveryDays/{fecha}.punto y los frecuentes en config/puntos.
+class PickupPoint {
+  final String name;
+  final double lat;
+  final double lng;
+
+  /// Indicaciones para encontrarte ahí ("Entrada principal, junto a la cafetería").
+  final String notes;
+
+  const PickupPoint({required this.name, required this.lat, required this.lng, this.notes = ''});
+
+  static PickupPoint? fromMap(Object? v) {
+    if (v is! Map) return null;
+    final name = (v['name'] as String? ?? '').trim();
+    final lat = v['lat'];
+    final lng = v['lng'];
+    if (name.isEmpty || lat is! num || lng is! num) return null;
+    return PickupPoint(
+      name: name,
+      lat: lat.toDouble(),
+      lng: lng.toDouble(),
+      notes: v['notes'] as String? ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {'name': name, 'lat': lat, 'lng': lng, 'notes': notes};
+
+  /// Lo que se guarda como dirección del pedido.
+  String get label => 'Entrega en $name';
+
+  bool sameAs(PickupPoint o) => o.name.toLowerCase() == name.toLowerCase();
 }
 
 /// Panes ya apartados en un día, por grupo de masa (documento dayStock/{fecha}).
@@ -347,6 +401,13 @@ class BakeryOrder {
   final int slotMinutes;
   final int movedFromMinutes;
 
+  /// Nombre del lugar si el pedido es de un día especial (entrega en un punto,
+  /// no a domicilio). Lo pone el servidor. Null = a domicilio.
+  final String? pickupName;
+
+  /// Ya se le avisó al cliente que el repartidor llegó al punto.
+  final bool arrivalNotified;
+
   const BakeryOrder({
     required this.id,
     required this.customerId,
@@ -373,7 +434,11 @@ class BakeryOrder {
     this.loyaltyPieces,
     this.slotMinutes = 60,
     this.movedFromMinutes = 60,
+    this.pickupName,
+    this.arrivalNotified = false,
   });
+
+  bool get isPickup => pickupName != null && pickupName!.isNotEmpty;
 
   bool get wasMoved => movedFromDate != null;
 
@@ -425,6 +490,8 @@ class BakeryOrder {
         loyaltyPieces: (m['lealtadPiezas'] as num?)?.toInt(),
         slotMinutes: (m['slotMinutes'] as num?)?.toInt() ?? 60,
         movedFromMinutes: ((m['movedFrom'] as Map?)?['slotMinutes'] as num?)?.toInt() ?? 60,
+        pickupName: m['puntoEntrega'] as String?,
+        arrivalNotified: m['llegadaAvisada'] as bool? ?? false,
       );
 
   /// Datos que escribe el cliente al crear el pedido.
@@ -686,4 +753,76 @@ DateTime? _toDate(Object? v) {
   } catch (_) {
     return null;
   }
+}
+
+/// Un cliente sugiere un día y una hora aproximada para que se abra entrega
+/// (cuando no hay días abiertos o ninguno le acomoda). Una por cliente por día:
+/// el id es `<uid>_<fecha>`, así que si la vuelve a mandar se actualiza.
+class DayRequest {
+  final String id;
+  final String customerId;
+  final String customerName;
+
+  /// AAAA-MM-DD.
+  final String date;
+
+  /// Franja aproximada (ver requestBands en logic/day_requests.dart).
+  final String band;
+
+  /// Dónde lo quiere: '' = a su domicilio; si no, el nombre de un lugar (FIME, Acuity…).
+  final String place;
+
+  /// Qué pan y cuántas piezas le gustaría (nombre → piezas). Puede ir vacío.
+  final Map<String, int> items;
+  final String note;
+  final DateTime? createdAt;
+  final bool seen;
+
+  /// El dueño ya le avisó que abrió ese día.
+  final bool notified;
+
+  const DayRequest({
+    required this.id,
+    required this.customerId,
+    required this.customerName,
+    required this.date,
+    required this.band,
+    this.place = '',
+    this.items = const {},
+    this.note = '',
+    this.createdAt,
+    this.seen = false,
+    this.notified = false,
+  });
+
+  static String idFor(String uid, String date) => '${uid}_$date';
+
+  int get pieces => items.values.fold(0, (a, b) => a + b);
+
+  factory DayRequest.fromMap(String id, Map<String, dynamic> m) => DayRequest(
+        id: id,
+        customerId: m['customerId'] as String? ?? '',
+        customerName: m['customerName'] as String? ?? '',
+        date: m['date'] as String? ?? '',
+        band: m['band'] as String? ?? '',
+        place: m['place'] as String? ?? '',
+        items: _intMap(m['items']),
+        note: m['note'] as String? ?? '',
+        createdAt: _toDate(m['createdAt']),
+        seen: m['seen'] as bool? ?? false,
+        notified: m['notified'] as bool? ?? false,
+      );
+
+  /// Lo que guarda el cliente (createdAt lo pone el servidor).
+  Map<String, dynamic> toMap() => {
+        'customerId': customerId,
+        'customerName': customerName,
+        'date': date,
+        'band': band,
+        'place': place,
+        'items': items,
+        'note': note,
+        'seen': false,
+        'notified': false,
+      };
 }

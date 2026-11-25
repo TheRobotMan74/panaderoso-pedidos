@@ -10,7 +10,8 @@ import '../models.dart';
 
 /// Acceso a los datos en Firebase. Colecciones:
 /// users, products, deliveryDays, dayStock, orders, config/app, tracking/current,
-/// reviews (una por pedido) y suggestions (ideas de pan nuevo).
+/// reviews (una por pedido), suggestions (ideas de pan nuevo) y dayRequests
+/// (días y horas que sugieren los clientes).
 class Repo {
   Repo._();
   static final instance = Repo._();
@@ -70,11 +71,6 @@ class Repo {
     }
   }
 
-  Future<void> saveFcmToken(String uid, String token) =>
-      _db.collection('users').doc(uid).set({
-        'fcmTokens': FieldValue.arrayUnion([token]),
-      }, SetOptions(merge: true));
-
   /// Quita el aviso de este celular de la cuenta (al cerrar sesión), para que no
   /// le sigan llegando a este celular los avisos de la cuenta anterior.
   Future<void> removeFcmToken(String uid, String token) =>
@@ -82,12 +78,14 @@ class Repo {
         'fcmTokens': FieldValue.arrayRemove([token]),
       });
 
-  /// Si el cliente tiene prendidas las notificaciones en su celular
-  /// (el dueño ve en Pedidos a quién no le van a llegar los avisos).
-  Future<void> savePushStatus(String uid, bool enabled) =>
+  /// Estado de los avisos de este celular en la cuenta, en una sola escritura:
+  /// [ok] = notificaciones prendidas y token guardado (el dueño ve 🔕 si es false);
+  /// [token] = a dónde mandarle los avisos (se suma a los de sus otros celulares).
+  Future<void> savePush(String uid, {required bool ok, String? token}) =>
       _db.collection('users').doc(uid).set({
-        'pushOk': enabled,
+        'pushOk': ok,
         'pushCheckedAt': FieldValue.serverTimestamp(),
+        if (token != null) 'fcmTokens': FieldValue.arrayUnion([token]),
       }, SetOptions(merge: true));
 
   /// Clientes que tienen apagadas las notificaciones. Solo el dueño.
@@ -96,6 +94,12 @@ class Repo {
       .where('pushOk', isEqualTo: false)
       .snapshots()
       .map((s) => s.docs.map((d) => d.id).toSet());
+
+  /// Todas las cuentas de clientes (para la sección Clientes). Solo el dueño.
+  Stream<List<AppUser>> customers() => _db.collection('users').snapshots().map((s) => [
+        for (final d in s.docs)
+          if (d.data()['role'] != 'dueno') AppUser.fromMap(d.id, d.data()),
+      ]);
 
   /// Manda el correo para cambiar la contraseña. Primero intenta el correo bonito
   /// de Panaderoso (sale del Gmail de la panadería, función "mandarRecuperacion").
@@ -219,6 +223,53 @@ class Repo {
         SetOptions(merge: true),
       );
 
+  /// Día especial: avisa a los clientes del día que ya llegaste al punto de entrega
+  /// (la función avisoLlegadaPunto manda la notificación una sola vez).
+  Future<void> markArrivedAtPickup(String date) =>
+      _db.collection('deliveryDays').doc(date).set({'llegue': true}, SetOptions(merge: true));
+
+  /// Lugares de entrega frecuentes (FIME, …) para no marcarlos cada vez.
+  /// Van en su propio documento para que guardar Ajustes no los borre.
+  Stream<List<PickupPoint>> pickupPoints() => _db
+      .collection('config')
+      .doc('puntos')
+      .snapshots()
+      .map((s) => [
+            for (final p in (s.data()?['lista'] as List? ?? const []))
+              ?PickupPoint.fromMap(p),
+          ]);
+
+  /// Guarda (o actualiza, por nombre) un lugar frecuente.
+  Future<void> savePickupPoint(PickupPoint p) async {
+    final ref = _db.collection('config').doc('puntos');
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final list = [
+        for (final x in (snap.data()?['lista'] as List? ?? const []))
+          if (PickupPoint.fromMap(x) case final q? when !q.sameAs(p)) q,
+        p,
+      ];
+      tx.set(ref, {'lista': [for (final q in list) q.toMap()]});
+    });
+  }
+
+  Future<void> removePickupPoint(PickupPoint p) async {
+    final ref = _db.collection('config').doc('puntos');
+    await _db.runTransaction((tx) async {
+      final snap = await tx.get(ref);
+      final list = [
+        for (final x in (snap.data()?['lista'] as List? ?? const []))
+          if (PickupPoint.fromMap(x) case final q? when !q.sameAs(p)) q.toMap(),
+      ];
+      tx.set(ref, {'lista': list});
+    });
+  }
+
+  /// Cambia el lugar de entrega de un día que todavía no tiene pedidos
+  /// (null = vuelve a ser a domicilio).
+  Future<void> setDayPickup(String date, PickupPoint? p) =>
+      _db.collection('deliveryDays').doc(date).update({'punto': p?.toMap()});
+
   Future<void> deleteDeliveryDay(String date) =>
       _db.collection('deliveryDays').doc(date).delete();
 
@@ -266,6 +317,21 @@ class Repo {
     } on FirebaseFunctionsException catch (e) {
       if (const ['resource-exhausted', 'failed-precondition', 'invalid-argument'].contains(e.code)) {
         throw RejectedByServer(e.message ?? 'Ya no hay cupo para ese día.');
+      }
+      rethrow;
+    }
+  }
+
+  /// Borra la cuenta del cliente y sus datos (lo hace el servidor, función "borrarCuenta").
+  /// Si tiene un pedido pendiente no se puede: lanza [RejectedByServer] con el motivo.
+  Future<void> deleteMyAccount() async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('borrarCuenta', options: HttpsCallableOptions(timeout: const Duration(seconds: 60)))
+          .call<Object?>();
+    } on FirebaseFunctionsException catch (e) {
+      if (const ['failed-precondition', 'unauthenticated'].contains(e.code)) {
+        throw RejectedByServer(e.message ?? 'No se pudo borrar la cuenta.');
       }
       rethrow;
     }
@@ -439,6 +505,40 @@ class Repo {
       final batch = _db.batch();
       for (final ref in refs.skip(i).take(400)) {
         batch.update(ref, {'seen': true});
+      }
+      await batch.commit();
+    }
+  }
+
+  // ---------- Días que piden los clientes ----------
+
+  CollectionReference<Map<String, dynamic>> get _dayRequests => _db.collection('dayRequests');
+
+  List<DayRequest> _toDayRequests(QuerySnapshot<Map<String, dynamic>> s) =>
+      s.docs.map((d) => DayRequest.fromMap(d.id, d.data())).toList()..sort((a, b) => a.date.compareTo(b.date));
+
+  /// El cliente sugiere un día y hora. Si ya había sugerido ese día, se reemplaza
+  /// (y vuelve a salir como nueva para el dueño).
+  Future<void> sendDayRequest(DayRequest r) => _dayRequests
+      .doc(DayRequest.idFor(r.customerId, r.date))
+      .set({...r.toMap(), 'createdAt': FieldValue.serverTimestamp()});
+
+  Stream<List<DayRequest>> myDayRequests(String uid) =>
+      _dayRequests.where('customerId', isEqualTo: uid).snapshots().map(_toDayRequests);
+
+  /// Todas las sugerencias de días. Solo el dueño.
+  Stream<List<DayRequest>> allDayRequests() => _dayRequests.snapshots().map(_toDayRequests);
+
+  /// La borra el cliente (ya no la quiere) o el dueño.
+  Future<void> deleteDayRequest(String id) => _dayRequests.doc(id).delete();
+
+  /// Solo el dueño: ya las vio, o ya les avisó que abrió el día.
+  Future<void> markDayRequests(Iterable<String> ids, {bool? seen, bool? notified}) async {
+    final list = ids.toList();
+    for (var i = 0; i < list.length; i += 400) {
+      final batch = _db.batch();
+      for (final id in list.skip(i).take(400)) {
+        batch.update(_dayRequests.doc(id), {'seen': ?seen, 'notified': ?notified});
       }
       await batch.commit();
     }

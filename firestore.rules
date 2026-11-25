@@ -117,6 +117,36 @@ service cloud.firestore {
       allow delete: if isOwner();
     }
 
+    // Días y horas que sugieren los clientes para que se abra entrega.
+    // Una por cliente por día: el id es "<uid>_<fecha>".
+    match /dayRequests/{id} {
+      allow read: if isOwner() || (signedIn() && resource.data.customerId == request.auth.uid);
+      allow create, update: if (signedIn()
+          && id == request.auth.uid + '_' + request.resource.data.date
+          && (resource == null || resource.data.customerId == request.auth.uid)
+          && request.resource.data.keys().hasOnly(['customerId', 'customerName', 'date', 'band', 'place',
+               'items', 'note', 'seen', 'notified', 'createdAt'])
+          && request.resource.data.customerId == request.auth.uid
+          && request.resource.data.customerName is string
+          && request.resource.data.customerName.size() <= 120
+          && request.resource.data.date is string
+          && request.resource.data.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+          && request.resource.data.band in ['temprano', 'manana', 'mediodia', 'tarde', 'noche']
+          && request.resource.data.place is string
+          && request.resource.data.place.size() <= 80
+          && request.resource.data.items is map
+          && request.resource.data.items.size() <= 20
+          && request.resource.data.note is string
+          && request.resource.data.note.size() <= 200
+          && request.resource.data.seen == false
+          && request.resource.data.notified == false
+          && request.resource.data.createdAt == request.time)
+        // El dueño solo la marca vista o avisada.
+        || (isOwner() && resource != null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen', 'notified']));
+      allow delete: if isOwner() || (signedIn() && resource.data.customerId == request.auth.uid);
+    }
+
     match /orders/{id} {
       allow read: if signedIn() && (resource.data.customerId == request.auth.uid || isOwner());
 
@@ -137,6 +167,8 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.open == true
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('closed', false) == false
         && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('stock', {}).size() == 0
+        // Días especiales (entrega en un punto) solo por hacerPedido.
+        && get(/databases/$(database)/documents/deliveryDays/$(request.resource.data.deliveryDate)).data.get('punto', null) == null
         && request.time < timestamp.date(
              int(request.resource.data.deliveryDate.split('-')[0]),
              int(request.resource.data.deliveryDate.split('-')[1]),

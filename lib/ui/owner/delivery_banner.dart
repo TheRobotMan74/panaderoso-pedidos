@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/geo.dart';
+import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../../services/tracker.dart';
@@ -18,6 +19,27 @@ class DeliveryBanner extends StatefulWidget {
 class _DeliveryBannerState extends State<DeliveryBanner> {
   final _tracker = DeliveryTracker.instance;
   bool _busy = false;
+
+  /// Para saber si hoy es día especial (entrega en un punto) y mostrar "Ya llegué".
+  late final Stream<List<DeliveryDay>> _days =
+      Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
+
+  Future<void> _arrived(DeliveryDay day) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('¿Ya llegaste a ${day.pickup!.name}?'),
+        content: const Text('A tus clientes de hoy les llega el aviso de que ya estás ahí.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Todavía no')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sí, avisar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await Repo.instance.markArrivedAtPickup(day.date);
+    _toast('Listo, les avisamos que ya llegaste a ${day.pickup!.name} 📍');
+  }
 
   @override
   void initState() {
@@ -87,12 +109,44 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: _tracker,
-      builder: (context, _) => StreamBuilder<TrackingInfo>(
+      builder: (context, _) => StreamBuilder<List<DeliveryDay>>(
+        stream: _days,
+        builder: (context, daysSnap) => StreamBuilder<TrackingInfo>(
         stream: Repo.instance.tracking(),
         builder: (context, snap) {
           final info = snap.data ?? const TrackingInfo();
+          final today = (daysSnap.data ?? const <DeliveryDay>[])
+              .where((d) => d.date == (info.date.isEmpty ? dateKey(DateTime.now()) : info.date))
+              .firstOrNull;
+          final pickupDay = today != null && today.isPickup ? today : null;
           final Widget child;
-          if (_tracker.running) {
+          if (_tracker.running && pickupDay != null) {
+            child = _box(
+              key: const ValueKey('repartiendo-punto'),
+              gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
+              leading: const PulseDot(color: Colors.white, size: 12),
+              title: pickupDay.arrived ? 'En ${pickupDay.pickup!.name}' : 'Rumbo a ${pickupDay.pickup!.name}',
+              subtitle: pickupDay.arrived
+                  ? 'Ya les avisamos que llegaste'
+                  : '${info.viewers.length} clientes ven por dónde vas',
+              light: true,
+              action: IntrinsicWidth(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!pickupDay.arrived)
+                      FilledButton(
+                        style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Pan.cacao),
+                        onPressed: _busy ? null : () => _arrived(pickupDay),
+                        child: const Text('Ya llegué'),
+                      ),
+                    _GhostButton(label: 'Terminar', onPressed: _busy ? null : _stop),
+                  ],
+                ),
+              ),
+            );
+          } else if (_tracker.running) {
             child = _box(
               key: const ValueKey('repartiendo'),
               gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
@@ -195,6 +249,7 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
             child: child,
           );
         },
+        ),
       ),
     );
   }

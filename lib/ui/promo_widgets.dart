@@ -94,7 +94,7 @@ class LoyaltyCardView extends StatelessWidget {
           children: [
             if (welcome)
               Text(
-                '🎁 Tu primer pedido de ${rules.welcomeMinPieces} piezas o más lleva 1 $name de regalo',
+                '🎁 Tu primer pedido a domicilio de ${rules.welcomeMinPieces} piezas o más lleva 1 $name de regalo',
                 style: theme.textTheme.bodyMedium!.copyWith(fontWeight: FontWeight.w800, color: Pan.salvia),
               ),
             if (welcome && rules.loyaltyEnabled) const SizedBox(height: 10),
