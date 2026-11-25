@@ -191,7 +191,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
     _giftName = gift?.name;
     final preview = gift == null || myOrders == null
         ? const GiftPreview()
-        : previewGifts(rules: cfg.promos, myOrders: myOrders, paidPieces: cart.pieces);
+        : previewGifts(rules: cfg.promos, myOrders: myOrders, items: cart.items);
     final welcomeMissing = gift != null &&
             myOrders != null &&
             cfg.promos.welcomeEnabled &&

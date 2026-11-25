@@ -38,11 +38,9 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _clabe = TextEditingController(text: widget.initial.clabe);
   late final _holder = TextEditingController(text: widget.initial.accountHolder);
   late final _whatsapp = TextEditingController(text: widget.initial.whatsapp);
-  late final _perKm =
-      TextEditingController(text: widget.initial.shipping.pricePerKm.toStringAsFixed(2));
+  late final _perKm = TextEditingController(text: widget.initial.shipping.pricePerKm.toStringAsFixed(2));
   late bool _shippingEnabled = widget.initial.shipping.enabled;
-  late final _nearMeters =
-      TextEditingController(text: widget.initial.nearAlertMeters.toString());
+  late final _nearMeters = TextEditingController(text: widget.initial.nearAlertMeters.toString());
   late double? _baseLat = widget.initial.baseLat;
   late final _etaSpeed = TextEditingController(text: _short(widget.initial.etaSpeedKmh));
   late final _etaStop = TextEditingController(text: _short(widget.initial.etaStopMinutes));
@@ -51,12 +49,13 @@ class _SettingsFormState extends State<_SettingsForm> {
   late bool _routeReturn = widget.initial.routeReturn;
   late double? _baseLng = widget.initial.baseLng;
   late bool _loyaltyOn = widget.initial.promos.loyaltyEnabled;
-  late final _loyaltyGoal =
-      TextEditingController(text: widget.initial.promos.loyaltyGoal.toString());
+  late final _loyaltyGoal = TextEditingController(text: widget.initial.promos.loyaltyGoal.toString());
   late bool _welcomeOn = widget.initial.promos.welcomeEnabled;
-  late final _welcomeMin =
-      TextEditingController(text: widget.initial.promos.welcomeMinPieces.toString());
+  late final _welcomeMin = TextEditingController(text: widget.initial.promos.welcomeMinPieces.toString());
   late String _giftId = widget.initial.promos.giftProductId;
+
+  /// Panes que suman a la tarjeta. Vacío = solo el chocolatín (lo normal).
+  late Set<String> _loyaltyIds = widget.initial.promos.loyaltyProductIds.toSet();
 
   Future<void> _pickBase() async {
     final picked = await Navigator.push<PickedLocation>(
@@ -77,8 +76,7 @@ class _SettingsFormState extends State<_SettingsForm> {
     });
     await Repo.instance.saveBaseLocation(picked.lat, picked.lng);
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Punto de salida guardado')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Punto de salida guardado')));
   }
 
   Future<void> _save() async {
@@ -95,25 +93,24 @@ class _SettingsFormState extends State<_SettingsForm> {
         roundTo: old.roundTo,
         roadFactor: old.roadFactor,
       ),
-      nearAlertMeters: (int.tryParse(_nearMeters.text.trim()) ?? widget.initial.nearAlertMeters)
-          .clamp(100, 10000),
+      nearAlertMeters:
+          (int.tryParse(_nearMeters.text.trim()) ?? widget.initial.nearAlertMeters).clamp(100, 10000),
       baseLat: _baseLat,
       baseLng: _baseLng,
       routeReturn: _routeReturn,
-      etaSpeedKmh: (double.tryParse(_etaSpeed.text.replaceAll(',', '.')) ?? widget.initial.etaSpeedKmh)
-          .clamp(5, 90),
+      etaSpeedKmh:
+          (double.tryParse(_etaSpeed.text.replaceAll(',', '.')) ?? widget.initial.etaSpeedKmh).clamp(5, 90),
       etaStopMinutes:
-          (double.tryParse(_etaStop.text.replaceAll(',', '.')) ?? widget.initial.etaStopMinutes)
-              .clamp(0, 30),
+          (double.tryParse(_etaStop.text.replaceAll(',', '.')) ?? widget.initial.etaStopMinutes).clamp(0, 30),
       promos: PromoRules(
         loyaltyEnabled: _loyaltyOn,
-        loyaltyGoal: (int.tryParse(_loyaltyGoal.text.trim()) ?? widget.initial.promos.loyaltyGoal)
-            .clamp(2, 100),
+        loyaltyGoal:
+            (int.tryParse(_loyaltyGoal.text.trim()) ?? widget.initial.promos.loyaltyGoal).clamp(2, 100),
         welcomeEnabled: _welcomeOn,
         welcomeMinPieces:
-            (int.tryParse(_welcomeMin.text.trim()) ?? widget.initial.promos.welcomeMinPieces)
-                .clamp(1, 50),
+            (int.tryParse(_welcomeMin.text.trim()) ?? widget.initial.promos.welcomeMinPieces).clamp(1, 50),
         giftProductId: _giftId,
+        loyaltyProductIds: _loyaltyIds.toList(),
       ),
     ));
     if (!mounted) return;
@@ -281,7 +278,8 @@ class _SettingsFormState extends State<_SettingsForm> {
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Tarjeta de lealtad'),
-          subtitle: const Text('Cada cierto número de piezas compradas, 1 pan gratis'),
+          subtitle:
+              const Text('Cada cierto número de piezas compradas de los panes que elijas, 1 pan gratis'),
           value: _loyaltyOn,
           onChanged: (v) => setState(() => _loyaltyOn = v),
         ),
@@ -294,6 +292,55 @@ class _SettingsFormState extends State<_SettingsForm> {
             suffixText: 'piezas',
             helperText: 'Cuentan las piezas compradas desde que salió la promoción',
           ),
+        ),
+        StreamBuilder<List<Product>>(
+          stream: Repo.instance.products(),
+          builder: (context, snap) {
+            final products = snap.data ?? const <Product>[];
+            // Sin elegir nada = los chocolatines; se ven marcados para que quede claro.
+            final shown = _loyaltyIds.isEmpty
+                ? loyaltyProducts(const PromoRules(), products).map((p) => p.id).toSet()
+                : _loyaltyIds;
+            return Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Panes que suman a la tarjeta', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Normalmente solo el chocolatín. Si quitas todos, vuelve a contar solo el chocolatín.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final p in products)
+                        FilterChip(
+                          label: Text(p.name),
+                          selected: shown.contains(p.id),
+                          onSelected: !_loyaltyOn
+                              ? null
+                              : (on) => setState(() {
+                                    final next = {...shown};
+                                    on ? next.add(p.id) : next.remove(p.id);
+                                    final auto = loyaltyProducts(const PromoRules(), products)
+                                        .map((x) => x.id)
+                                        .toSet();
+                                    // Si quedó igual que lo normal, se guarda vacío (= chocolatín).
+                                    _loyaltyIds = next.length == auto.length && next.containsAll(auto)
+                                        ? <String>{}
+                                        : next;
+                                  }),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,

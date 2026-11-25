@@ -338,8 +338,10 @@ class BakeryOrder {
   final String? movedFromDate;
   final String? movedFromSlot;
 
-  /// Piezas compradas que cuentan para la tarjeta de lealtad. Solo lo traen los
-  /// pedidos hechos desde que salió la promoción (null en los de antes).
+  /// Piezas compradas (todas; con esto se cobra el envío). Solo lo traen los
+  /// pedidos hechos desde que salió la promoción (null en los de antes), así que
+  /// también marca qué pedidos cuentan para la tarjeta. Qué panes suman se ve en
+  /// lib/logic/promos.dart (countsForLoyalty).
   final int? loyaltyPieces;
   /// Duración del horario en minutos (la pone el servidor al pedir o mover; antes siempre era 60).
   final int slotMinutes;
