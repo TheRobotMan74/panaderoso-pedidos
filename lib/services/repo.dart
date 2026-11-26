@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -136,9 +135,10 @@ class Repo {
     return p.id.isEmpty ? col.add(p.toMap()) : col.doc(p.id).set(p.toMap());
   }
 
-  Future<String> uploadProductImage(File file) async {
+  /// Con bytes (no archivo) para que funcione igual en el celular y en la compu.
+  Future<String> uploadProductImage(Uint8List bytes) async {
     final ref = _storage.ref('products/${DateTime.now().millisecondsSinceEpoch}.jpg');
-    await ref.putFile(file, SettableMetadata(contentType: 'image/jpeg'));
+    await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
     return ref.getDownloadURL();
   }
 

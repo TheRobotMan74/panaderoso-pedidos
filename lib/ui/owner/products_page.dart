@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
@@ -100,22 +100,23 @@ class _ProductForm extends StatefulWidget {
 class _ProductFormState extends State<_ProductForm> {
   late final _name = TextEditingController(text: widget.product?.name);
   late final _desc = TextEditingController(text: widget.product?.description);
-  late final _price = TextEditingController(
-      text: widget.product == null ? '' : widget.product!.price.toStringAsFixed(0));
+  late final _price =
+      TextEditingController(text: widget.product == null ? '' : widget.product!.price.toStringAsFixed(0));
   late String? _imageUrl = widget.product?.imageUrl;
-  File? _newImage;
+  Uint8List? _newImage;
   bool _busy = false;
 
   Future<void> _pick() async {
     final x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1000, imageQuality: 80);
-    if (x != null) setState(() => _newImage = File(x.path));
+    if (x == null) return;
+    final bytes = await x.readAsBytes();
+    if (mounted) setState(() => _newImage = bytes);
   }
 
   Future<void> _save() async {
     final price = double.tryParse(_price.text.replaceAll(',', '.'));
     if (_name.text.trim().isEmpty || price == null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Pon el nombre y el precio.')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pon el nombre y el precio.')));
       return;
     }
     setState(() => _busy = true);
@@ -146,7 +147,7 @@ class _ProductFormState extends State<_ProductForm> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(28),
                 child: _newImage != null
-                    ? Image.file(_newImage!, width: 180, height: 180, fit: BoxFit.cover, cacheWidth: 540)
+                    ? Image.memory(_newImage!, width: 180, height: 180, fit: BoxFit.cover, cacheWidth: 540)
                     : ProductImage(url: _imageUrl, name: _name.text, size: 180),
               ),
             ),

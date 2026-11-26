@@ -601,3 +601,34 @@ String greeting(DateTime now) {
   if (h < 19) return 'Buenas tardes';
   return 'Buenas noches';
 }
+
+/// En pantallas anchas (la compu) deja la app centrada con un ancho cómodo,
+/// en vez de estirar las tarjetas de lado a lado. En el celular no hace nada.
+class WideFrame extends StatelessWidget {
+  final Widget child;
+  const WideFrame({super.key, required this.child});
+
+  static const maxWidth = 1100.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    if (mq.size.width <= maxWidth + 40) return child;
+    return ColoredBox(
+      color: Pan.harina,
+      child: Center(
+        child: Container(
+          width: maxWidth,
+          decoration: const BoxDecoration(
+            boxShadow: [BoxShadow(color: Color(0x1A3B2A1E), blurRadius: 30)],
+          ),
+          // Las pantallas de adentro "creen" que la ventana mide lo mismo que el marco.
+          child: MediaQuery(
+            data: mq.copyWith(size: Size(maxWidth, mq.size.height)),
+            child: ClipRect(child: child),
+          ),
+        ),
+      ),
+    );
+  }
+}

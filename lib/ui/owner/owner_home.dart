@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../logic/day_requests.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../theme.dart';
 import '../widgets.dart';
 import 'calendar_page.dart';
 import 'delivery_banner.dart';
@@ -37,6 +38,42 @@ class _OwnerHomeState extends State<OwnerHome> {
 
   @override
   Widget build(BuildContext context) {
+    // En la compu (pantalla ancha) las secciones van en una barra a la izquierda.
+    final wide = MediaQuery.sizeOf(context).width >= 840;
+    final dests = <({Widget icon, Widget selectedIcon, String label})>[
+      (
+        icon: const Icon(Icons.receipt_long_outlined),
+        selectedIcon: const Icon(Icons.receipt_long),
+        label: 'Pedidos'
+      ),
+      (icon: const Icon(Icons.insights_outlined), selectedIcon: const Icon(Icons.insights), label: 'Demanda'),
+      // Numerito cuando hay clientes nuevos sugiriendo días.
+      (
+        icon: _DaysIcon(stream: _newDayRequests, selected: false),
+        selectedIcon: _DaysIcon(stream: _newDayRequests, selected: true),
+        label: 'Días',
+      ),
+      (
+        icon: const Icon(Icons.bakery_dining_outlined),
+        selectedIcon: const Icon(Icons.bakery_dining),
+        label: 'Productos',
+      ),
+      (icon: const Icon(Icons.settings_outlined), selectedIcon: const Icon(Icons.settings), label: 'Ajustes'),
+    ];
+    final content = FadeThroughSwitcher(
+      child: KeyedSubtree(
+        key: ValueKey(_tab),
+        child: switch (_tab) {
+          0 => const Column(
+              children: [DeliveryBanner(), Expanded(child: OrdersPage())],
+            ),
+          1 => const DemandPage(),
+          2 => const CalendarPage(),
+          3 => const ProductsPage(),
+          _ => const SettingsPage(),
+        },
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -96,44 +133,36 @@ class _OwnerHomeState extends State<OwnerHome> {
           const SizedBox(width: 4),
         ],
       ),
-      body: FadeThroughSwitcher(
-        child: KeyedSubtree(
-          key: ValueKey(_tab),
-          child: switch (_tab) {
-            0 => const Column(
-                children: [DeliveryBanner(), Expanded(child: OrdersPage())],
-              ),
-            1 => const DemandPage(),
-            2 => const CalendarPage(),
-            3 => const ProductsPage(),
-            _ => const SettingsPage(),
-          },
-        ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: [
-          const NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
-              label: 'Pedidos'),
-          const NavigationDestination(
-              icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: 'Demanda'),
-          // Numerito cuando hay clientes nuevos sugiriendo días.
-          NavigationDestination(
-            icon: _DaysIcon(stream: _newDayRequests, selected: false),
-            selectedIcon: _DaysIcon(stream: _newDayRequests, selected: true),
-            label: 'Días',
-          ),
-          const NavigationDestination(
-              icon: Icon(Icons.bakery_dining_outlined),
-              selectedIcon: Icon(Icons.bakery_dining),
-              label: 'Productos'),
-          const NavigationDestination(
-              icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Ajustes'),
-        ],
-      ),
+      body: wide
+          ? Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _tab,
+                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  labelType: NavigationRailLabelType.all,
+                  backgroundColor: Pan.papel,
+                  groupAlignment: -0.9,
+                  destinations: [
+                    for (final d in dests)
+                      NavigationRailDestination(
+                          icon: d.icon, selectedIcon: d.selectedIcon, label: Text(d.label)),
+                  ],
+                ),
+                const VerticalDivider(width: 1, thickness: 1, color: Pan.harina),
+                Expanded(child: content),
+              ],
+            )
+          : content,
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              selectedIndex: _tab,
+              onDestinationSelected: (i) => setState(() => _tab = i),
+              destinations: [
+                for (final d in dests)
+                  NavigationDestination(icon: d.icon, selectedIcon: d.selectedIcon, label: d.label),
+              ],
+            ),
     );
   }
 }
