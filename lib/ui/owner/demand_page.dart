@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../logic/archive.dart';
 import '../../logic/demand.dart';
+import '../../logic/flavors.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
@@ -143,16 +144,33 @@ class _DayCard extends StatelessWidget {
           else ...[
             Text('Para hornear', style: theme.textTheme.titleSmall),
             const SizedBox(height: 8),
-            for (final p in products)
+            for (final p in products) ...[
               _Bar(
                 label: p,
                 qty: demand.totalByProduct[p]!,
                 fraction: demand.totalByProduct[p]! / maxQty,
               ),
+              if (demand.flavorsOf(p).isNotEmpty)
+                FlavorChips(counts: demand.flavorsByProduct[p]!, order: demand.flavorsOf(p)),
+            ],
             const SizedBox(height: 10),
             Text('Por horario', style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
             SlotDemandTable(demand: demand, products: products),
+            // Panes con sabores: cuántas de cada sabor en cada horario.
+            for (final p in products)
+              if (demand.flavorsOf(p).isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('${productArt(p).$1} $p por sabor', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                SlotDemandTable(
+                  demand: demand.flavorTable(p),
+                  products: demand.flavorsOf(p),
+                  firstColumn: p,
+                  emojiFor: flavorEmoji,
+                  labelFor: flavorName,
+                ),
+              ],
           ],
         ],
             ),
@@ -260,7 +278,23 @@ class _Bar extends StatelessWidget {
 class SlotDemandTable extends StatelessWidget {
   final DayDemand demand;
   final List<String> products;
-  const SlotDemandTable({super.key, required this.demand, required this.products});
+
+  /// Primera columna: 'Pedidos' (cuántos pedidos por horario) o, en la tabla de
+  /// sabores, 'Total' con el dibujito de ese pan (cuántas piezas por horario).
+  final String? firstColumn;
+
+  /// Dibujito y nombre de cada columna (en la de sabores: 🍫 Chocolate…).
+  final String Function(String)? emojiFor;
+  final String Function(String)? labelFor;
+
+  const SlotDemandTable({
+    super.key,
+    required this.demand,
+    required this.products,
+    this.firstColumn,
+    this.emojiFor,
+    this.labelFor,
+  });
 
   static const _rowH = 40.0;
   static const _headStyle = TextStyle(
@@ -281,12 +315,19 @@ class SlotDemandTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final headers = ['Pedidos', for (final p in products) wrapShort(p)];
-    final emojis = ['🧾', for (final p in products) productArt(p).$1];
-    final slotRows = [
-      for (final s in demand.slots) [s.orders, for (final p in products) s.piecesByProduct[p] ?? 0],
+    final byFlavor = firstColumn != null;
+    final headers = [
+      byFlavor ? 'Total' : 'Pedidos',
+      for (final p in products) wrapShort(labelFor?.call(p) ?? p),
     ];
-    final totals = [demand.orders, for (final p in products) demand.totalByProduct[p] ?? 0];
+    final emojis = [
+      byFlavor ? productArt(firstColumn!).$1 : '🧾',
+      for (final p in products) emojiFor?.call(p) ?? productArt(p).$1,
+    ];
+    final slotRows = [
+      for (final s in demand.slots) [byFlavor ? s.pieces : s.orders, for (final p in products) s.piecesByProduct[p] ?? 0],
+    ];
+    final totals = [byFlavor ? demand.pieces : demand.orders, for (final p in products) demand.totalByProduct[p] ?? 0];
 
     return LayoutBuilder(
       builder: (context, c) {
@@ -467,4 +508,44 @@ class SlotDemandTable extends StatelessWidget {
     ),
     child: child,
   );
+}
+
+/// Debajo de la barra de un pan con sabores: "🍩 Glaseado 4  🍫 Chocolate 3 …".
+class FlavorChips extends StatelessWidget {
+  final Map<String, int> counts;
+  final List<String> order;
+  const FlavorChips({super.key, required this.counts, required this.order});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(left: 26, top: 2, bottom: 6),
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final f in order)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: f == noFlavor ? const Color(0xFFF8E1DC) : Pan.crema,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text.rich(
+                  TextSpan(children: [
+                    TextSpan(text: '${flavorEmoji(f)} ${flavorName(f)} '),
+                    TextSpan(
+                      text: '${counts[f] ?? 0}',
+                      style: const TextStyle(fontWeight: FontWeight.w900, color: Pan.tostado),
+                    ),
+                  ]),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: f == noFlavor ? Pan.terracota : Pan.cacao,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
 }

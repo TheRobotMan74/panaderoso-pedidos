@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../logic/flavors.dart';
 import '../../logic/geo.dart';
 import '../../logic/route.dart';
 import '../../logic/schedule.dart';
@@ -115,7 +116,7 @@ class _DayRouteMapState extends State<DayRouteMap> {
         infoWindow: InfoWindow(
           title: '${i + 1}. ${o.customerName}',
           snippet:
-              '${slotLabel(o.slot, minutes: o.slotMinutes)} · ${o.pieces} pzas${done ? ' · entregado' : ''}',
+              '${slotLabel(o.slot, minutes: o.slotMinutes)} · ${itemsLabel(o.items)}${done ? ' · entregado' : ''}',
         ),
       ));
     }

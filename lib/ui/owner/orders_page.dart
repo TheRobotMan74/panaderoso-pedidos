@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../logic/archive.dart';
 import '../../logic/day_route.dart';
+import '../../logic/flavors.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
@@ -662,7 +663,7 @@ class _OrderCard extends StatelessWidget {
                           child: Text(
                             it.isGift
                                 ? '🎁 ${it.qty} ${it.name} gratis (${GiftTag.label(it.gift).toLowerCase()})'
-                                : '${productArt(it.name).$1} ${it.qty} ${it.name}',
+                                : '${productArt(it.name).$1} ${itemLabel(it)}',
                             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                           ),
                         ),

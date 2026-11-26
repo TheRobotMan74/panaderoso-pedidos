@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../logic/feedback.dart';
+import '../../logic/flavors.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
@@ -281,7 +282,7 @@ class _OrderCard extends StatelessWidget {
                       children: [
                         Text(productArt(it.name).$1, style: const TextStyle(fontSize: 16)),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('${it.qty} × ${it.name}', style: theme.textTheme.bodyMedium)),
+                        Expanded(child: Text(itemLabel(it, times: '× '), style: theme.textTheme.bodyMedium)),
                         if (it.isGift)
                           GiftTag(kind: it.gift, compact: true)
                         else

@@ -19,6 +19,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'day_request_sheet.dart';
 import 'addresses.dart';
+import 'flavor_picker.dart';
 
 /// Confirmar pedido: día, horario, forma de pago y captura de transferencia.
 class CheckoutPage extends StatefulWidget {
@@ -260,7 +261,13 @@ class _CheckoutPageState extends State<CheckoutPage> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Text('${i.qty} × ${i.name}', style: theme.textTheme.titleSmall),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${i.qty} × ${i.name}', style: theme.textTheme.titleSmall),
+                              OrderItemFlavors(item: i),
+                            ],
+                          ),
                         ),
                         Text(money(i.total), style: theme.textTheme.bodyMedium),
                       ],

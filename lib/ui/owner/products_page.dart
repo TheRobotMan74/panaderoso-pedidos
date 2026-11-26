@@ -3,12 +3,14 @@ import 'dart:typed_data';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../logic/flavors.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
 import '../product_image.dart';
 import '../theme.dart';
 import '../widgets.dart';
+import 'flavors_editor.dart';
 
 class ProductsPage extends StatelessWidget {
   const ProductsPage({super.key});
@@ -103,6 +105,9 @@ class _ProductFormState extends State<_ProductForm> {
   late final _price =
       TextEditingController(text: widget.product == null ? '' : widget.product!.price.toStringAsFixed(0));
   late String? _imageUrl = widget.product?.imageUrl;
+
+  /// Sabores que eligió el dueño. Null = no los ha tocado (las donas traen los de siempre).
+  late List<String>? _flavors = widget.product?.savedFlavors;
   Uint8List? _newImage;
   bool _busy = false;
 
@@ -130,6 +135,7 @@ class _ProductFormState extends State<_ProductForm> {
       available: widget.product?.available ?? true,
       sortOrder: widget.product?.sortOrder ?? widget.nextOrder,
       stockGroup: widget.product?.stockGroup ?? '',
+      savedFlavors: _flavors,
     ));
     if (mounted) Navigator.pop(context);
   }
@@ -174,7 +180,16 @@ class _ProductFormState extends State<_ProductForm> {
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(labelText: 'Precio', prefixText: r'$ '),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+          ListenableBuilder(
+            listenable: _name,
+            builder: (context, _) => FlavorsField(
+              name: _name.text,
+              flavors: flavorsFor(_name.text, _flavors),
+              onChanged: (v) => setState(() => _flavors = v),
+            ),
+          ),
+          const SizedBox(height: 16),
           HoneyButton(label: 'Guardar', icon: Icons.check_rounded, busy: _busy, onPressed: _save),
         ],
       ),

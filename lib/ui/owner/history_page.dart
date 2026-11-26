@@ -2,10 +2,12 @@ import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/archive.dart';
+import '../../logic/flavors.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
+import '../product_image.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'orders_page.dart' show DeleteOrderButton;
@@ -283,7 +285,7 @@ class _DayCard extends StatelessWidget {
                   ),
                 ),
                 subtitle: Text(
-                  '${o.items.map((i) => '${i.qty} ${i.name}').join(', ')}\n'
+                  '${itemsLabel(o.items)}\n'
                   '${money(o.total)} · ${payLabel(o)}',
                   style: theme.textTheme.bodySmall,
                 ),
@@ -362,6 +364,10 @@ class _OrderSheetState extends State<_OrderSheet> {
             Text('${capitalize(dayLabel(o.deliveryDate))} · ${money(o.total)}', style: theme.textTheme.bodySmall),
             const SizedBox(height: 2),
             Text(payLabel(o), style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            for (final it in o.items)
+              Text('${productArt(it.name).$1} ${itemLabel(it)}${it.isGift ? ' · regalo' : ''}',
+                  style: theme.textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w700)),
             if (!isCash) ...[
               const SizedBox(height: 14),
               FutureBuilder<String?>(

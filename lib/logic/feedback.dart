@@ -1,4 +1,5 @@
 import '../models.dart';
+import 'flavors.dart';
 import 'schedule.dart';
 
 /// Se puede calificar un pedido entregado, o uno de un día que ya pasó
@@ -33,7 +34,7 @@ BakeryOrder? orderToReview(
 }
 
 /// "2 × Chocolatín", para que el dueño sepa de qué pedido habla la reseña.
-List<String> reviewItems(BakeryOrder o) => [for (final it in o.items) '${it.qty} × ${it.name}'];
+List<String> reviewItems(BakeryOrder o) => [for (final it in o.items) itemLabel(it, times: '× ')];
 
 /// Cómo se llama cada calificación.
 String ratingLabel(int stars) => switch (stars) {
