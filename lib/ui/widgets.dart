@@ -604,6 +604,9 @@ String greeting(DateTime now) {
 
 /// En pantallas anchas (la compu) deja la app centrada con un ancho cómodo,
 /// en vez de estirar las tarjetas de lado a lado. En el celular no hace nada.
+///
+/// El árbol de widgets es siempre el mismo (angosto o ancho): así, al girar la
+/// tablet o desdoblar el celular, no se pierde la pantalla en la que ibas.
 class WideFrame extends StatelessWidget {
   final Widget child;
   const WideFrame({super.key, required this.child});
@@ -613,22 +616,84 @@ class WideFrame extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
-    if (mq.size.width <= maxWidth + 40) return child;
+    final framed = mq.size.width > maxWidth + 40;
+    final width = framed ? maxWidth : mq.size.width;
     return ColoredBox(
       color: Pan.harina,
       child: Center(
         child: Container(
-          width: maxWidth,
-          decoration: const BoxDecoration(
-            boxShadow: [BoxShadow(color: Color(0x1A3B2A1E), blurRadius: 30)],
+          width: width,
+          decoration: BoxDecoration(
+            boxShadow: framed ? const [BoxShadow(color: Color(0x1A3B2A1E), blurRadius: 30)] : null,
           ),
           // Las pantallas de adentro "creen" que la ventana mide lo mismo que el marco.
           child: MediaQuery(
-            data: mq.copyWith(size: Size(maxWidth, mq.size.height)),
+            data: mq.copyWith(size: Size(width, mq.size.height)),
             child: ClipRect(child: child),
           ),
         ),
       ),
     );
   }
+}
+
+/// Medidas para pantallas grandes: tablets, plegables abiertos y la compu.
+abstract final class Ancho {
+  /// Desde aquí la navegación va en una barra a la izquierda (como el panel del dueño).
+  static const barraLateral = 840.0;
+
+  /// Desde aquí los panes del menú van de dos en dos.
+  static const dosColumnas = 700.0;
+
+  /// Ancho cómodo para leer una columna de tarjetas o un formulario.
+  static const lectura = 680.0;
+
+  /// Ancho del menú en dos columnas.
+  static const menu = 960.0;
+
+  static bool barra(BuildContext context) => MediaQuery.sizeOf(context).width >= barraLateral;
+}
+
+/// Una lista que en el celular se ve igual que siempre, y en pantalla ancha deja
+/// las tarjetas en una columna centrada de [maxWidth]. El relleno va *dentro* de la
+/// lista, así se puede deslizar tocando en cualquier lado de la pantalla.
+class ReadableList extends StatelessWidget {
+  final EdgeInsets padding;
+  final double maxWidth;
+  final Widget Function(BuildContext context, EdgeInsets padding) builder;
+  const ReadableList({
+    super.key,
+    required this.padding,
+    required this.builder,
+    this.maxWidth = Ancho.lectura,
+  });
+
+  /// [base] más lo que haga falta a los lados para que el contenido no pase de [maxWidth].
+  static EdgeInsets pad(double width, EdgeInsets base, {double maxWidth = Ancho.lectura}) {
+    final inner = width - base.horizontal;
+    if (inner <= maxWidth) return base;
+    final extra = (inner - maxWidth) / 2;
+    return base.copyWith(left: base.left + extra, right: base.right + extra);
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, c) => builder(context, pad(c.maxWidth, padding, maxWidth: maxWidth)),
+      );
+}
+
+/// Centra [child] con un ancho máximo (para barras y paneles que flotan sobre un mapa).
+class MaxWidth extends StatelessWidget {
+  final double maxWidth;
+  final Widget child;
+  final AlignmentGeometry alignment;
+  const MaxWidth({super.key, required this.maxWidth, required this.child, this.alignment = Alignment.center});
+
+  @override
+  Widget build(BuildContext context) => Align(
+        alignment: alignment,
+        widthFactor: 1,
+        heightFactor: 1,
+        child: ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: child),
+      );
 }

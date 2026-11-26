@@ -48,9 +48,8 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   final _webGeocoder = kIsWeb ? WebGeocoder() : null;
   final _search = TextEditingController();
   GoogleMapController? _map;
-  late LatLng _center = widget.lat != null && widget.lng != null
-      ? LatLng(widget.lat!, widget.lng!)
-      : _mexico.target;
+  late LatLng _center =
+      widget.lat != null && widget.lng != null ? LatLng(widget.lat!, widget.lng!) : _mexico.target;
   late bool _chosen = widget.lat != null;
   String _address = '';
   bool _lookingUp = false;
@@ -172,86 +171,91 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
                   'para usar dónde estás ahorita.',
             )
           else
-          GoogleMap(
-            initialCameraPosition: _chosen ? CameraPosition(target: _center, zoom: 18) : _mexico,
-            onMapCreated: (c) => _map = c,
-            myLocationEnabled: false,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            onCameraMove: (c) => _center = c.target,
-            onCameraMoveStarted: () => setState(() {
-              _chosen = true;
-              _moving = true;
-            }),
-            onCameraIdle: () {
-              if (_moving) setState(() => _moving = false);
-              if (_chosen) _lookupAddress();
-            },
-          ),
+            GoogleMap(
+              initialCameraPosition: _chosen ? CameraPosition(target: _center, zoom: 18) : _mexico,
+              onMapCreated: (c) => _map = c,
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              onCameraMove: (c) => _center = c.target,
+              onCameraMoveStarted: () => setState(() {
+                _chosen = true;
+                _moving = true;
+              }),
+              onCameraIdle: () {
+                if (_moving) setState(() => _moving = false);
+                if (_chosen) _lookupAddress();
+              },
+            ),
           // Pin fijo al centro: se mueve el mapa, no el pin.
           if (mapsUsable)
-          IgnorePointer(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 52),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    AnimatedSlide(
-                      offset: _moving ? const Offset(0, -0.25) : Offset.zero,
-                      duration: Motion.of(context, Motion.rapido),
-                      curve: _moving ? Curves.easeOut : Curves.bounceOut,
-                      child: const Icon(Icons.location_on_rounded, size: 52, color: Pan.caramelo,
-                          shadows: [Shadow(color: Color(0x553B2A1E), blurRadius: 8, offset: Offset(0, 3))]),
-                    ),
-                    // Sombrita en el piso: se achica cuando el pin se levanta.
-                    AnimatedScale(
-                      scale: _moving ? 0.6 : 1,
-                      duration: Motion.of(context, Motion.rapido),
-                      child: Container(
-                        width: 14,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: const Color(0x553B2A1E),
-                          borderRadius: BorderRadius.circular(4),
+            IgnorePointer(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 52),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AnimatedSlide(
+                        offset: _moving ? const Offset(0, -0.25) : Offset.zero,
+                        duration: Motion.of(context, Motion.rapido),
+                        curve: _moving ? Curves.easeOut : Curves.bounceOut,
+                        child: const Icon(Icons.location_on_rounded,
+                            size: 52,
+                            color: Pan.caramelo,
+                            shadows: [Shadow(color: Color(0x553B2A1E), blurRadius: 8, offset: Offset(0, 3))]),
+                      ),
+                      // Sombrita en el piso: se achica cuando el pin se levanta.
+                      AnimatedScale(
+                        scale: _moving ? 0.6 : 1,
+                        duration: Motion.of(context, Motion.rapido),
+                        child: Container(
+                          width: 14,
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: const Color(0x553B2A1E),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           Positioned(
             left: 12,
             right: 12,
             top: 12,
-            child: Material(
-              elevation: 4,
-              color: Pan.papel,
-              shadowColor: const Color(0x553B2A1E),
-              borderRadius: BorderRadius.circular(20),
-              clipBehavior: Clip.antiAlias,
-              child: TextField(
-                controller: _search,
-                textInputAction: TextInputAction.search,
-                onSubmitted: (_) => _doSearch(),
-                decoration: InputDecoration(
-                  hintText: 'Busca tu calle y número',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _searching
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: SizedBox(
-                              width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                        )
-                      : IconButton(icon: const Icon(Icons.arrow_forward), onPressed: _doSearch),
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16),
+            child: MaxWidth(
+              maxWidth: 560,
+              child: Material(
+                elevation: 4,
+                color: Pan.papel,
+                shadowColor: const Color(0x553B2A1E),
+                borderRadius: BorderRadius.circular(20),
+                clipBehavior: Clip.antiAlias,
+                child: TextField(
+                  controller: _search,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => _doSearch(),
+                  decoration: InputDecoration(
+                    hintText: 'Busca tu calle y número',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searching
+                        ? const Padding(
+                            padding: EdgeInsets.all(14),
+                            child: SizedBox(
+                                width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        : IconButton(icon: const Icon(Icons.arrow_forward), onPressed: _doSearch),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
                 ),
               ),
             ),
@@ -270,41 +274,46 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
             left: 0,
             right: 0,
             bottom: 0,
-            child: Material(
-              elevation: 10,
-              color: Pan.papel,
-              shadowColor: const Color(0x553B2A1E),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-              child: SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AnimatedCount(
-                        !_chosen
-                            ? (mapsUsable
-                                ? 'Mueve el mapa hasta que el pin quede en tu casa.'
-                                : 'Busca tu dirección arriba.')
-                            : _lookingUp
-                                ? 'Buscando la dirección…'
-                                : (_address.isEmpty ? 'Punto marcado en el mapa' : _address),
-                        style: theme.textTheme.titleMedium,
-                        alignment: Alignment.centerLeft,
-                        maxLines: 2,
-                      ),
-                      const SizedBox(height: 14),
-                      HoneyButton(
-                        onPressed: _chosen
-                            ? () => Navigator.pop(
-                                context, PickedLocation(_center.latitude, _center.longitude, _address))
-                            : null,
-                        icon: Icons.check_rounded,
-                        label: widget.confirmLabel,
-                      ),
-                    ],
+            // En tablet el panel no se estira de lado a lado.
+            child: MaxWidth(
+              maxWidth: 640,
+              alignment: Alignment.bottomCenter,
+              child: Material(
+                elevation: 10,
+                color: Pan.papel,
+                shadowColor: const Color(0x553B2A1E),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                child: SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 14),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        AnimatedCount(
+                          !_chosen
+                              ? (mapsUsable
+                                  ? 'Mueve el mapa hasta que el pin quede en tu casa.'
+                                  : 'Busca tu dirección arriba.')
+                              : _lookingUp
+                                  ? 'Buscando la dirección…'
+                                  : (_address.isEmpty ? 'Punto marcado en el mapa' : _address),
+                          style: theme.textTheme.titleMedium,
+                          alignment: Alignment.centerLeft,
+                          maxLines: 2,
+                        ),
+                        const SizedBox(height: 14),
+                        HoneyButton(
+                          onPressed: _chosen
+                              ? () => Navigator.pop(
+                                  context, PickedLocation(_center.latitude, _center.longitude, _address))
+                              : null,
+                          icon: Icons.check_rounded,
+                          label: widget.confirmLabel,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -319,9 +328,7 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
 /// "Av. Juárez 120, Centro, Morelia" a partir de lo que regresa Android.
 String addressFromPlacemark(Placemark p) {
   String clean(String? s) => (s ?? '').trim();
-  final street = [clean(p.thoroughfare), clean(p.subThoroughfare)]
-      .where((s) => s.isNotEmpty)
-      .join(' ');
+  final street = [clean(p.thoroughfare), clean(p.subThoroughfare)].where((s) => s.isNotEmpty).join(' ');
   final parts = [
     street.isNotEmpty ? street : clean(p.street),
     clean(p.subLocality),

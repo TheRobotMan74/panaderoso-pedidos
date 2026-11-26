@@ -29,11 +29,9 @@ class _LoginPageState extends State<LoginPage> {
     final auth = FirebaseAuth.instance;
     try {
       if (_creating) {
-        await auth.createUserWithEmailAndPassword(
-            email: _email.text.trim(), password: _password.text);
+        await auth.createUserWithEmailAndPassword(email: _email.text.trim(), password: _password.text);
       } else {
-        await auth.signInWithEmailAndPassword(
-            email: _email.text.trim(), password: _password.text);
+        await auth.signInWithEmailAndPassword(email: _email.text.trim(), password: _password.text);
       }
     } on FirebaseAuthException catch (e) {
       setState(() => _error = _message(e.code));
@@ -77,8 +75,7 @@ class _LoginPageState extends State<LoginPage> {
         'invalid-email' => 'El correo no es válido.',
         'email-already-in-use' => 'Ya hay una cuenta con ese correo. Entra con él.',
         'weak-password' => 'La contraseña debe tener al menos 6 caracteres.',
-        'invalid-credential' || 'wrong-password' || 'user-not-found' =>
-          'Correo o contraseña incorrectos.',
+        'invalid-credential' || 'wrong-password' || 'user-not-found' => 'Correo o contraseña incorrectos.',
         'network-request-failed' => 'Sin internet. Revisa tu conexión.',
         _ => 'No se pudo entrar ($code).',
       };
@@ -93,111 +90,116 @@ class _LoginPageState extends State<LoginPage> {
           const Positioned.fill(child: _WarmBackdrop()),
           SafeArea(
             bottom: false,
-            child: ListView(
+            child: ReadableList(
               padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottom),
-              children: [
-                const SizedBox(height: 28),
-                const Center(child: FloatingBear(size: 132)),
-                const SizedBox(height: 22),
-                FadeSlideIn(
-                  index: 1,
-                  child: Text('Panaderoso',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.displaySmall!.copyWith(color: Pan.tostado)),
-                ),
-                FadeSlideIn(
-                  index: 2,
-                  child: Text('Pan recién horneado, hasta tu puerta',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyLarge!.copyWith(color: Pan.canela)),
-                ),
-                const SizedBox(height: 32),
-                FadeSlideIn(
-                  index: 3,
-                  child: PanCard(
-                    padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
-                    child: AnimatedSize(
-                      duration: Motion.of(context, Motion.medio),
-                      curve: Motion.curva,
-                      alignment: Alignment.topCenter,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          AnimatedCount(
-                            _creating ? 'Crea tu cuenta' : '¡Qué gusto verte!',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 16),
-                          TextField(
-                            controller: _email,
-                            keyboardType: TextInputType.emailAddress,
-                            autofillHints: const [AutofillHints.email],
-                            decoration: const InputDecoration(
-                              labelText: 'Correo',
-                              prefixIcon: Icon(Icons.mail_outline_rounded),
+              maxWidth: 480,
+              builder: (context, pad) => ListView(
+                padding: pad,
+                children: [
+                  const SizedBox(height: 28),
+                  const Center(child: FloatingBear(size: 132)),
+                  const SizedBox(height: 22),
+                  FadeSlideIn(
+                    index: 1,
+                    child: Text('Panaderoso',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.displaySmall!.copyWith(color: Pan.tostado)),
+                  ),
+                  FadeSlideIn(
+                    index: 2,
+                    child: Text('Pan recién horneado, hasta tu puerta',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyLarge!.copyWith(color: Pan.canela)),
+                  ),
+                  const SizedBox(height: 32),
+                  FadeSlideIn(
+                    index: 3,
+                    child: PanCard(
+                      padding: const EdgeInsets.fromLTRB(18, 20, 18, 12),
+                      child: AnimatedSize(
+                        duration: Motion.of(context, Motion.medio),
+                        curve: Motion.curva,
+                        alignment: Alignment.topCenter,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            AnimatedCount(
+                              _creating ? 'Crea tu cuenta' : '¡Qué gusto verte!',
+                              style: theme.textTheme.titleLarge,
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _password,
-                            obscureText: true,
-                            autofillHints: const [AutofillHints.password],
-                            onSubmitted: (_) => _busy ? null : _submit(),
-                            decoration: const InputDecoration(
-                              labelText: 'Contraseña',
-                              prefixIcon: Icon(Icons.lock_outline_rounded),
-                            ),
-                          ),
-                          if (_error != null) ...[
-                            const SizedBox(height: 12),
-                            FadeSlideIn(
-                              key: ValueKey(_error),
-                              offset: 8,
-                              child: Row(
-                                children: [
-                                  Icon(Icons.info_outline_rounded, size: 18, color: theme.colorScheme.error),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(_error!,
-                                        style: TextStyle(
-                                            color: theme.colorScheme.error, fontWeight: FontWeight.w700)),
-                                  ),
-                                ],
+                            const SizedBox(height: 16),
+                            TextField(
+                              controller: _email,
+                              keyboardType: TextInputType.emailAddress,
+                              autofillHints: const [AutofillHints.email],
+                              decoration: const InputDecoration(
+                                labelText: 'Correo',
+                                prefixIcon: Icon(Icons.mail_outline_rounded),
                               ),
                             ),
-                          ],
-                          const SizedBox(height: 18),
-                          HoneyButton(
-                            label: _creating ? 'Crear cuenta' : 'Entrar',
-                            icon: _creating ? Icons.person_add_alt_1_rounded : Icons.arrow_forward_rounded,
-                            busy: _busy,
-                            onPressed: _submit,
-                          ),
-                          const SizedBox(height: 4),
-                          if (!_creating)
-                            TextButton(
-                              onPressed: _sendingReset ? null : _resetPassword,
-                              child: Text(_sendingReset ? 'Mandando el correo…' : 'Olvidé mi contraseña'),
+                            const SizedBox(height: 12),
+                            TextField(
+                              controller: _password,
+                              obscureText: true,
+                              autofillHints: const [AutofillHints.password],
+                              onSubmitted: (_) => _busy ? null : _submit(),
+                              decoration: const InputDecoration(
+                                labelText: 'Contraseña',
+                                prefixIcon: Icon(Icons.lock_outline_rounded),
+                              ),
                             ),
-                        ],
+                            if (_error != null) ...[
+                              const SizedBox(height: 12),
+                              FadeSlideIn(
+                                key: ValueKey(_error),
+                                offset: 8,
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.info_outline_rounded,
+                                        size: 18, color: theme.colorScheme.error),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(_error!,
+                                          style: TextStyle(
+                                              color: theme.colorScheme.error, fontWeight: FontWeight.w700)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 18),
+                            HoneyButton(
+                              label: _creating ? 'Crear cuenta' : 'Entrar',
+                              icon: _creating ? Icons.person_add_alt_1_rounded : Icons.arrow_forward_rounded,
+                              busy: _busy,
+                              onPressed: _submit,
+                            ),
+                            const SizedBox(height: 4),
+                            if (!_creating)
+                              TextButton(
+                                onPressed: _sendingReset ? null : _resetPassword,
+                                child: Text(_sendingReset ? 'Mandando el correo…' : 'Olvidé mi contraseña'),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                FadeSlideIn(
-                  index: 4,
-                  child: TextButton(
-                    onPressed: _busy
-                        ? null
-                        : () => setState(() {
-                              _creating = !_creating;
-                              _error = null;
-                            }),
-                    child: Text(_creating ? 'Ya tengo cuenta, entrar' : '¿Primera vez? Crea tu cuenta'),
+                  const SizedBox(height: 14),
+                  FadeSlideIn(
+                    index: 4,
+                    child: TextButton(
+                      onPressed: _busy
+                          ? null
+                          : () => setState(() {
+                                _creating = !_creating;
+                                _error = null;
+                              }),
+                      child: Text(_creating ? 'Ya tengo cuenta, entrar' : '¿Primera vez? Crea tu cuenta'),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],

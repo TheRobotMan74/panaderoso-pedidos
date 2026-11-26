@@ -235,8 +235,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
       hint = 'Sube la captura de tu transferencia para continuar.';
     }
 
-    return ListView(
+    // En tablet o plegable abierto, el pedido queda en una columna centrada.
+    return ReadableList(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+      builder: (context, pad) => ListView(
+      padding: pad,
       children: [
         // ----- Productos -----
         FadeSlideIn(
@@ -545,6 +548,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                 ),
         ),
       ],
+    ),
     );
   }
 

@@ -105,7 +105,10 @@ class ProductHero extends StatelessWidget {
 
   /// true en la pantalla de detalle (foto grande arriba).
   final bool big;
-  const ProductHero({super.key, required this.product, required this.size, this.big = false});
+
+  /// Esquinas de la foto grande (en tablet va a un lado, redonda completa).
+  final BorderRadius? bigRadius;
+  const ProductHero({super.key, required this.product, required this.size, this.big = false, this.bigRadius});
 
   static const _listRadius = BorderRadius.all(Radius.circular(18));
   static const _bigRadius = BorderRadius.vertical(bottom: Radius.circular(36));
@@ -119,7 +122,7 @@ class ProductHero extends StatelessWidget {
           return AnimatedBuilder(
             animation: animation,
             builder: (context, child) => ClipRRect(
-              borderRadius: BorderRadius.lerp(_listRadius, _bigRadius, animation.value)!,
+              borderRadius: BorderRadius.lerp(_listRadius, bigRadius ?? _bigRadius, animation.value)!,
               child: child,
             ),
             child: FittedBox(
@@ -129,7 +132,7 @@ class ProductHero extends StatelessWidget {
           );
         },
         child: ClipRRect(
-          borderRadius: big ? _bigRadius : _listRadius,
+          borderRadius: big ? (bigRadius ?? _bigRadius) : _listRadius,
           child: ProductImage(url: product.imageUrl, name: product.name, size: size),
         ),
       );
