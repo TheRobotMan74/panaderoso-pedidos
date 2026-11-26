@@ -318,6 +318,52 @@ function stockLabel(productId, product) {
 }
 
 // ---------------------------------------------------------------------------
+// Sabores (donas: glaseado, chocolate, caramelo)
+// ---------------------------------------------------------------------------
+// products/{id}.sabores = ['Glaseado', 'Chocolate', 'Caramelo'] ← lo pone el dueño.
+// Si nunca los tocó, las donas traen esos tres. Igual que lib/logic/flavors.dart.
+// En el pedido: items[].sabores = { Chocolate: 2, Caramelo: 1 }, que suman qty.
+// Todos los sabores comparten el cupo del pan (el cupo va por producto o masa).
+const SABORES_DONA = ['Glaseado', 'Chocolate', 'Caramelo'];
+const MAX_SABORES = 12;
+
+function saboresDe(product) {
+  const p = product || {};
+  if (!Array.isArray(p.sabores)) return /\bdonas?\b/.test(sinAcentos(p.name)) ? SABORES_DONA : [];
+  const vistos = new Set();
+  const out = [];
+  for (const s of p.sabores) {
+    const n = typeof s === 'string' ? s.trim().replace(/\s+/g, ' ') : '';
+    if (!n || n.length > 40 || vistos.has(sinAcentos(n))) continue;
+    vistos.add(sinAcentos(n));
+    out.push(n);
+    if (out.length === MAX_SABORES) break;
+  }
+  return out;
+}
+
+// Los sabores que eligió, con el nombre como está en el catálogo. Tienen que sumar
+// las piezas de ese pan. Si no manda ninguno (versión vieja de la app) se acepta
+// vacío y el dueño ve esas piezas como "sin sabor elegido".
+function saboresDelPedido(product, sabores, elegidos, qty) {
+  const out = {};
+  let suma = 0;
+  for (const [nombre, n] of Object.entries(elegidos)) {
+    const sabor = sabores.find((s) => sinAcentos(s) === sinAcentos(nombre));
+    if (!sabor) {
+      throw new HttpsError('failed-precondition',
+        `Ya no hay ${product.name || 'ese pan'} de ${nombre}. Elige otro sabor.`);
+    }
+    out[sabor] = (out[sabor] || 0) + n;
+    suma += n;
+  }
+  if (suma !== 0 && suma !== qty) {
+    throw new HttpsError('invalid-argument', `Revisa los sabores de tus ${product.name || 'panes'}.`);
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // Promociones: tarjeta de lealtad y pan de bienvenida
 // ---------------------------------------------------------------------------
 // Igual que lib/logic/promos.dart. Aquí es donde de verdad se pone el pan gratis.
@@ -422,12 +468,26 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
   }
   const pedidos = Array.isArray(d.items) ? d.items : [];
   const qtyById = {};
+  // Sabores que eligió (donas: { Chocolate: 2, Caramelo: 1 }). Se revisan contra el catálogo abajo.
+  const saboresById = {};
   for (const it of pedidos) {
     const qty = Number(it && it.qty);
     if (!it || typeof it.productId !== 'string' || !it.productId || !Number.isInteger(qty) || qty < 1 || qty > 500) {
       throw new HttpsError('invalid-argument', 'Revisa las cantidades de tu pedido.');
     }
     qtyById[it.productId] = (qtyById[it.productId] || 0) + qty;
+    if (it.sabores && typeof it.sabores === 'object' && !Array.isArray(it.sabores)) {
+      const elegidos = saboresById[it.productId] || (saboresById[it.productId] = {});
+      const entradas = Object.entries(it.sabores);
+      if (entradas.length > MAX_SABORES) throw new HttpsError('invalid-argument', 'Revisa los sabores de tu pedido.');
+      for (const [sabor, n] of entradas) {
+        const nombre = sabor.trim();
+        if (!nombre || nombre.length > 40 || !Number.isInteger(n) || n < 0 || n > 500) {
+          throw new HttpsError('invalid-argument', 'Revisa los sabores de tu pedido.');
+        }
+        if (n > 0) elegidos[nombre] = (elegidos[nombre] || 0) + n;
+      }
+    }
   }
   const ids = Object.keys(qtyById);
   if (ids.length === 0 || ids.length > 30) throw new HttpsError('invalid-argument', 'Tu carrito está vacío.');
@@ -486,7 +546,10 @@ exports.hacerPedido = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) 
           `${(pd && pd.name) || 'Un producto'} ya no está disponible. Quítalo de tu carrito.`);
       }
       const qty = qtyById[p.id];
-      items.push({ productId: p.id, name: pd.name || '', price: Number(pd.price) || 0, qty });
+      const item = { productId: p.id, name: pd.name || '', price: Number(pd.price) || 0, qty };
+      const sabores = saboresDe(pd);
+      if (sabores.length) item.sabores = saboresDelPedido(pd, sabores, saboresById[p.id] || {}, qty);
+      items.push(item);
       const key = stockKey(p.id, pd);
       need[key] = (need[key] || 0) + qty;
       labels[key] = stockLabel(p.id, pd);

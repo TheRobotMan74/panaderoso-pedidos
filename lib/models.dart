@@ -1,3 +1,4 @@
+import 'logic/flavors.dart';
 import 'logic/promos.dart';
 import 'logic/shipping.dart';
 
@@ -151,6 +152,10 @@ class Product {
   /// Vacío = tiene su propio cupo.
   final String stockGroup;
 
+  /// Sabores que guardó el dueño (campo "sabores"). Null = nunca los tocó: las
+  /// donas traen glaseado, chocolate y caramelo (ver logic/flavors.dart).
+  final List<String>? savedFlavors;
+
   const Product({
     required this.id,
     required this.name,
@@ -160,9 +165,15 @@ class Product {
     this.available = true,
     this.sortOrder = 0,
     this.stockGroup = '',
+    this.savedFlavors,
   });
 
-  Product copyWith({bool? available, String? stockGroup}) => Product(
+  /// Sabores entre los que elige el cliente. Vacío = este pan no tiene sabores.
+  List<String> get flavors => flavorsFor(name, savedFlavors);
+
+  bool get hasFlavors => flavors.isNotEmpty;
+
+  Product copyWith({bool? available, String? stockGroup, List<String>? flavors}) => Product(
         id: id,
         name: name,
         description: description,
@@ -171,6 +182,7 @@ class Product {
         available: available ?? this.available,
         sortOrder: sortOrder,
         stockGroup: stockGroup ?? this.stockGroup,
+        savedFlavors: flavors ?? savedFlavors,
       );
 
   factory Product.fromMap(String id, Map<String, dynamic> m) => Product(
@@ -182,6 +194,7 @@ class Product {
         available: m['available'] as bool? ?? true,
         sortOrder: (m['sortOrder'] as num?)?.toInt() ?? 0,
         stockGroup: m['stockGroup'] as String? ?? '',
+        savedFlavors: m['sabores'] is List ? [for (final f in m['sabores'] as List) if (f is String) f] : null,
       );
 
   Map<String, dynamic> toMap() => {
@@ -192,6 +205,7 @@ class Product {
         'available': available,
         'sortOrder': sortOrder,
         'stockGroup': stockGroup,
+        if (savedFlavors != null) 'sabores': cleanFlavors(savedFlavors!),
       };
 }
 
@@ -343,12 +357,19 @@ class OrderItem {
   /// Solo lo pone el servidor (functions/index.js → hacerPedido).
   final String? gift;
 
+  /// Cuántas de cada sabor (campo "sabores"): {"Chocolate": 2, "Caramelo": 1}.
+  /// Null = ese pan no tiene sabores (o el pedido es de antes de los sabores).
+  /// Si suman menos que [qty], las que faltan son "sin sabor elegido" (versiones
+  /// viejas de la app). Ver logic/flavors.dart.
+  final Map<String, int>? flavors;
+
   const OrderItem({
     required this.productId,
     required this.name,
     required this.price,
     required this.qty,
     this.gift,
+    this.flavors,
   });
 
   bool get isGift => gift != null;
@@ -361,10 +382,16 @@ class OrderItem {
         price: (m['price'] as num?)?.toDouble() ?? 0,
         qty: (m['qty'] as num?)?.toInt() ?? 0,
         gift: m['regalo'] as String?,
+        flavors: m['sabores'] is Map ? _intMap(m['sabores']) : null,
       );
 
-  Map<String, dynamic> toMap() =>
-      {'productId': productId, 'name': name, 'price': price, 'qty': qty};
+  Map<String, dynamic> toMap() => {
+        'productId': productId,
+        'name': name,
+        'price': price,
+        'qty': qty,
+        if (flavors != null && flavors!.isNotEmpty) 'sabores': flavors,
+      };
 }
 
 class BakeryOrder {

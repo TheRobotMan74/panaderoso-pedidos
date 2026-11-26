@@ -8,6 +8,7 @@ import '../location_picker_page.dart';
 import '../theme.dart';
 import '../update_watcher.dart';
 import '../widgets.dart';
+import 'flavors_editor.dart';
 
 /// Datos para transferencias y reglas de envío.
 class SettingsPage extends StatelessWidget {
@@ -245,6 +246,9 @@ class _SettingsFormState extends State<_SettingsForm> {
             ),
           ],
         ),
+        const Divider(height: 40),
+        const SectionTitle('Sabores', padding: EdgeInsets.fromLTRB(4, 4, 4, 4)),
+        const FlavorsSettings(),
         const Divider(height: 40),
         const SectionTitle('Promociones', padding: EdgeInsets.fromLTRB(4, 4, 4, 4)),
         Text(
