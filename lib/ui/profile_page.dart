@@ -142,89 +142,92 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
         ],
       ),
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
-          children: [
-            if (!widget.editing)
-              FadeSlideIn(
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 18),
-                  child: Row(
-                    children: [
-                      const BearLogo(size: 56),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          '¡Bienvenido! Dinos a dónde llevarte el pan.',
-                          style: Theme.of(context).textTheme.titleMedium,
+      body: ReadableList(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        builder: (context, pad) => Form(
+          key: _form,
+          child: ListView(
+            padding: pad,
+            children: [
+              if (!widget.editing)
+                FadeSlideIn(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 18),
+                    child: Row(
+                      children: [
+                        const BearLogo(size: 56),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            '¡Bienvenido! Dinos a dónde llevarte el pan.',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            TextFormField(
-              controller: _name,
-              validator: _required,
-              decoration:
-                  const InputDecoration(labelText: 'Nombre', prefixIcon: Icon(Icons.person_outline_rounded)),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _phone,
-              validator: _required,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                  labelText: 'Teléfono (WhatsApp)', prefixIcon: Icon(Icons.phone_iphone_rounded)),
-            ),
-            if (_manyAddresses) ...[
-              const SectionTitle('Mis direcciones'),
-              AddressesSection(uid: widget.uid),
-            ] else ...[
-              const SectionTitle('Tu casa en el mapa'),
-              HomeMapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
-              const SizedBox(height: 12),
               TextFormField(
-                controller: _address,
+                controller: _name,
                 validator: _required,
-                maxLines: 2,
                 decoration: const InputDecoration(
-                  labelText: 'Dirección: calle, número y colonia',
-                  helperText: 'Se llena sola al marcar el mapa; corrígela si hace falta',
-                  prefixIcon: Icon(Icons.home_outlined),
-                ),
+                    labelText: 'Nombre', prefixIcon: Icon(Icons.person_outline_rounded)),
               ),
               const SizedBox(height: 12),
               TextFormField(
-                controller: _notes,
+                controller: _phone,
+                validator: _required,
+                keyboardType: TextInputType.phone,
                 decoration: const InputDecoration(
-                  labelText: 'Referencias (opcional)',
-                  hintText: 'Ej. portón negro, tocar el timbre',
-                  prefixIcon: Icon(Icons.sticky_note_2_outlined),
-                ),
+                    labelText: 'Teléfono (WhatsApp)', prefixIcon: Icon(Icons.phone_iphone_rounded)),
               ),
-            ],
-            const SizedBox(height: 24),
-            HoneyButton(
-              label: 'Guardar',
-              icon: Icons.check_rounded,
-              busy: _busy,
-              onPressed: _save,
-            ),
-            if (widget.editing && !_isOwner && widget.existing != null) ...[
-              const SizedBox(height: 32),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _busy ? null : _deleteAccount,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                  label: const Text('Borrar mi cuenta'),
-                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+              if (_manyAddresses) ...[
+                const SectionTitle('Mis direcciones'),
+                AddressesSection(uid: widget.uid),
+              ] else ...[
+                const SectionTitle('Tu casa en el mapa'),
+                HomeMapPreview(lat: _lat, lng: _lng, onTap: _pickOnMap, error: _missingPin),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _address,
+                  validator: _required,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Dirección: calle, número y colonia',
+                    helperText: 'Se llena sola al marcar el mapa; corrígela si hace falta',
+                    prefixIcon: Icon(Icons.home_outlined),
+                  ),
                 ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _notes,
+                  decoration: const InputDecoration(
+                    labelText: 'Referencias (opcional)',
+                    hintText: 'Ej. portón negro, tocar el timbre',
+                    prefixIcon: Icon(Icons.sticky_note_2_outlined),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 24),
+              HoneyButton(
+                label: 'Guardar',
+                icon: Icons.check_rounded,
+                busy: _busy,
+                onPressed: _save,
               ),
+              if (widget.editing && !_isOwner && widget.existing != null) ...[
+                const SizedBox(height: 32),
+                Center(
+                  child: TextButton.icon(
+                    onPressed: _busy ? null : _deleteAccount,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                    label: const Text('Borrar mi cuenta'),
+                    style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.error),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

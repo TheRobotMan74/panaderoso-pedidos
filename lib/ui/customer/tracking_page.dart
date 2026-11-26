@@ -166,8 +166,7 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
 
   Future<void> _openWhatsApp() async {
     final o = _order;
-    final text =
-        'Hola Panaderoso 🐻, soy ${o.customerName}. Te escribo por mi pedido de hoy '
+    final text = 'Hola Panaderoso 🐻, soy ${o.customerName}. Te escribo por mi pedido de hoy '
         '(${slotLabel(o.slot, minutes: o.slotMinutes)}).';
     final ok = await launchUrl(
       whatsAppUrl(_whatsapp, text),
@@ -210,13 +209,19 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
       now: DateTime.now(),
     );
     final delivered = _order.status == OrderStatus.entregado;
+    // Tablet o plegable abierto: la tarjeta va a un lado y el mapa ocupa lo demás.
+    final wide = MediaQuery.sizeOf(context).width >= Ancho.dosColumnas;
+    const panel = 400.0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('¿Dónde va mi pedido?')),
       body: Stack(
         children: [
           if (!mapsUsable)
-            const MapFallback(message: 'Aquí abajo te decimos qué tan cerca va tu pan.')
+            MapFallback(
+                message: wide
+                    ? 'En la tarjeta te decimos qué tan cerca va tu pan.'
+                    : 'Aquí abajo te decimos qué tan cerca va tu pan.')
           else
             GoogleMap(
               initialCameraPosition: CameraPosition(
@@ -226,7 +231,7 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
               markers: markers,
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
-              padding: const EdgeInsets.only(bottom: 170),
+              padding: wide ? const EdgeInsets.only(left: panel + 24) : const EdgeInsets.only(bottom: 170),
               onMapCreated: (c) {
                 _map = c;
                 _fitIfNeeded();
@@ -234,7 +239,8 @@ class _TrackingPageState extends State<TrackingPage> with SingleTickerProviderSt
             ),
           Positioned(
             left: 12,
-            right: 12,
+            right: wide ? null : 12,
+            width: wide ? panel : null,
             bottom: 12 + MediaQuery.paddingOf(context).bottom,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -321,19 +327,19 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-    width: 54,
-    height: 54,
-    decoration: BoxDecoration(
-      gradient: delivered ? null : Pan.gradienteMiel,
-      color: delivered ? Pan.salviaClara : null,
-      shape: BoxShape.circle,
-    ),
-    child: Icon(
-      delivered ? Icons.check_rounded : Icons.delivery_dining_rounded,
-      size: 30,
-      color: delivered ? Pan.salvia : Pan.cacao,
-    ),
-  );
+        width: 54,
+        height: 54,
+        decoration: BoxDecoration(
+          gradient: delivered ? null : Pan.gradienteMiel,
+          color: delivered ? Pan.salviaClara : null,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(
+          delivered ? Icons.check_rounded : Icons.delivery_dining_rounded,
+          size: 30,
+          color: delivered ? Pan.salvia : Pan.cacao,
+        ),
+      );
 }
 
 /// Lo que dice la tarjeta de abajo del mapa.
@@ -369,9 +375,12 @@ TrackingView trackingView({
   }
   // Día especial: todos se entregan en el mismo lugar.
   if (order.isPickup && order.arrivalNotified) {
-    return TrackingView('¡Ya estamos en ${order.pickupName}!', [
-      'Pasa por tu pedido. Tu horario: ${slotLabel(order.slot, minutes: order.slotMinutes)}.',
-    ], live: true);
+    return TrackingView(
+        '¡Ya estamos en ${order.pickupName}!',
+        [
+          'Pasa por tu pedido. Tu horario: ${slotLabel(order.slot, minutes: order.slotMinutes)}.',
+        ],
+        live: true);
   }
 
   if (info == null) return const TrackingView('Buscando al repartidor…', []);
@@ -405,8 +414,8 @@ TrackingView trackingView({
       ahead == 0
           ? '¡Tu entrega es la siguiente!'
           : ahead == 1
-          ? 'Falta 1 entrega antes de la tuya'
-          : 'Faltan $ahead entregas antes de la tuya',
+              ? 'Falta 1 entrega antes de la tuya'
+              : 'Faltan $ahead entregas antes de la tuya',
     );
   }
 

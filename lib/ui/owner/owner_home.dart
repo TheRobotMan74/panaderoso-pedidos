@@ -34,12 +34,14 @@ class _OwnerHomeState extends State<OwnerHome> {
       .handleError((_) {})
       .asBroadcastStream();
 
+  final _contentKey = GlobalKey();
+
   static const _titles = ['Pedidos', 'Demanda', 'Días de entrega', 'Productos', 'Ajustes'];
 
   @override
   Widget build(BuildContext context) {
     // En la compu (pantalla ancha) las secciones van en una barra a la izquierda.
-    final wide = MediaQuery.sizeOf(context).width >= 840;
+    final wide = Ancho.barra(context);
     final dests = <({Widget icon, Widget selectedIcon, String label})>[
       (
         icon: const Icon(Icons.receipt_long_outlined),
@@ -60,18 +62,23 @@ class _OwnerHomeState extends State<OwnerHome> {
       ),
       (icon: const Icon(Icons.settings_outlined), selectedIcon: const Icon(Icons.settings), label: 'Ajustes'),
     ];
-    final content = FadeThroughSwitcher(
-      child: KeyedSubtree(
-        key: ValueKey(_tab),
-        child: switch (_tab) {
-          0 => const Column(
-              children: [DeliveryBanner(), Expanded(child: OrdersPage())],
-            ),
-          1 => const DemandPage(),
-          2 => const CalendarPage(),
-          3 => const ProductsPage(),
-          _ => const SettingsPage(),
-        },
+    // La GlobalKey "muda" el contenido entre los dos acomodos sin volver a empezar
+    // (girar la tablet o desdoblar el celular no te saca de donde ibas).
+    final content = KeyedSubtree(
+      key: _contentKey,
+      child: FadeThroughSwitcher(
+        child: KeyedSubtree(
+          key: ValueKey(_tab),
+          child: switch (_tab) {
+            0 => const Column(
+                children: [DeliveryBanner(), Expanded(child: OrdersPage())],
+              ),
+            1 => const DemandPage(),
+            2 => const CalendarPage(),
+            3 => const ProductsPage(),
+            _ => const SettingsPage(),
+          },
+        ),
       ),
     );
     return Scaffold(

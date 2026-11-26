@@ -93,10 +93,12 @@ class _AddressEditPageState extends State<AddressEditPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(_isNew ? 'Nueva dirección' : 'Editar dirección')),
-      body: Form(
+      body: ReadableList(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+        builder: (context, pad) => Form(
         key: _form,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 32),
+          padding: pad,
           children: [
             const SectionTitle('¿Cómo la llamamos?'),
             Wrap(
@@ -155,6 +157,7 @@ class _AddressEditPageState extends State<AddressEditPage> {
             HoneyButton(label: 'Guardar dirección', icon: Icons.check_rounded, onPressed: _save),
           ],
         ),
+      ),
       ),
     );
   }

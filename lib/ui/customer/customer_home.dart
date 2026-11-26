@@ -36,6 +36,10 @@ class _CustomerHomeState extends State<CustomerHome> {
   final _cart = Cart();
   int _tab = 0;
 
+  /// Al girar o desdoblar, el contenido se "muda" entre la barra de abajo y la de
+  /// un lado sin volver a empezar (no se pierde dónde ibas en la lista).
+  final _contentKey = GlobalKey();
+
   @override
   void dispose() {
     _cart.dispose();
@@ -76,6 +80,45 @@ class _CustomerHomeState extends State<CustomerHome> {
 
   @override
   Widget build(BuildContext context) {
+    // Tablet o plegable abierto: las secciones van en una barra a la izquierda.
+    final wide = Ancho.barra(context);
+    final content = KeyedSubtree(
+      key: _contentKey,
+      child: _withWebBanner(Stack(
+        children: [
+          Positioned.fill(
+            child: FadeThroughSwitcher(
+              child: _tab == 0
+                  ? _Catalog(key: const ValueKey('pan'), cart: _cart, user: widget.user)
+                  : MyOrdersPage(
+                      key: const ValueKey('pedidos'),
+                      uid: widget.user.uid,
+                      homeLat: widget.user.lat,
+                      homeLng: widget.user.lng,
+                    ),
+            ),
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 12,
+            // En pantalla ancha la barra del carrito no se estira de lado a lado.
+            child: MaxWidth(
+              maxWidth: 560,
+              child: ListenableBuilder(
+                listenable: _cart,
+                builder: (context, _) => _CartBar(
+                  visible: _tab == 0 && !_cart.isEmpty,
+                  pieces: _cart.pieces,
+                  total: _cart.subtotal,
+                  onTap: _openCheckout,
+                ),
+              ),
+            ),
+          ),
+        ],
+      )),
+    );
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 64,
@@ -129,54 +172,44 @@ class _CustomerHomeState extends State<CustomerHome> {
           ),
         ],
       ),
-      body: _withWebBanner(Stack(
-        children: [
-          Positioned.fill(
-            child: FadeThroughSwitcher(
-              child: _tab == 0
-                  ? _Catalog(key: const ValueKey('pan'), cart: _cart, user: widget.user)
-                  : MyOrdersPage(
-                      key: const ValueKey('pedidos'),
-                      uid: widget.user.uid,
-                      homeLat: widget.user.lat,
-                      homeLng: widget.user.lng,
-                    ),
+      body: wide
+          ? Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _tab,
+                  onDestinationSelected: (i) => setState(() => _tab = i),
+                  labelType: NavigationRailLabelType.all,
+                  backgroundColor: Pan.papel,
+                  groupAlignment: -0.9,
+                  destinations: [
+                    for (final d in _dests)
+                      NavigationRailDestination(
+                          icon: Icon(d.icon), selectedIcon: Icon(d.selectedIcon), label: Text(d.label)),
+                  ],
+                ),
+                const VerticalDivider(width: 1, thickness: 1, color: Pan.harina),
+                Expanded(child: content),
+              ],
+            )
+          : content,
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              selectedIndex: _tab,
+              onDestinationSelected: (i) => setState(() => _tab = i),
+              destinations: [
+                for (final d in _dests)
+                  NavigationDestination(
+                      icon: Icon(d.icon), selectedIcon: Icon(d.selectedIcon), label: d.label),
+              ],
             ),
-          ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 12,
-            child: ListenableBuilder(
-              listenable: _cart,
-              builder: (context, _) => _CartBar(
-                visible: _tab == 0 && !_cart.isEmpty,
-                pieces: _cart.pieces,
-                total: _cart.subtotal,
-                onTap: _openCheckout,
-              ),
-            ),
-          ),
-        ],
-      )),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.bakery_dining_outlined),
-            selectedIcon: Icon(Icons.bakery_dining),
-            label: 'Pan',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long),
-            label: 'Mis pedidos',
-          ),
-        ],
-      ),
     );
   }
+
+  static const _dests = [
+    (icon: Icons.bakery_dining_outlined, selectedIcon: Icons.bakery_dining, label: 'Pan'),
+    (icon: Icons.receipt_long_outlined, selectedIcon: Icons.receipt_long, label: 'Mis pedidos'),
+  ];
 }
 
 /// Barra flotante del carrito: entra desde abajo y "brinca" cuando agregas algo.
@@ -250,8 +283,7 @@ class _CartBarState extends State<_CartBar> with SingleTickerProviderStateMixin 
                       alignment: Alignment.center,
                       child: AnimatedCount(
                         '${widget.pieces}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w900, fontSize: 18, color: Pan.cacao),
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Pan.cacao),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -261,8 +293,7 @@ class _CartBarState extends State<_CartBar> with SingleTickerProviderStateMixin 
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text('Ver mi pedido',
-                              style: TextStyle(
-                                  color: Pan.crema, fontWeight: FontWeight.w800, fontSize: 16)),
+                              style: TextStyle(color: Pan.crema, fontWeight: FontWeight.w800, fontSize: 16)),
                           Text('Elige día y horario',
                               style: TextStyle(color: Color(0xFFCDB89C), fontSize: 12.5)),
                         ],
@@ -311,32 +342,56 @@ class _Catalog extends StatelessWidget {
         final first = user.name.trim().split(' ').first;
         return ListenableBuilder(
           listenable: cart,
-          builder: (context, _) => ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
-            itemCount: products.length + 2,
-            itemBuilder: (context, i) {
-              if (i == 0) return FadeSlideIn(child: _Welcome(name: first, user: user));
-              if (i == products.length + 1) {
-                // Al final del menú: reseñas escogidas por el dueño y "Sugiere un pan".
+          builder: (context, _) => LayoutBuilder(builder: (context, c) {
+            // Tablet o plegable abierto: los panes van de dos en dos.
+            final cols = c.maxWidth >= Ancho.dosColumnas ? 2 : 1;
+            final rows = (products.length / cols).ceil();
+            final pad = ReadableList.pad(
+              c.maxWidth,
+              const EdgeInsets.fromLTRB(16, 4, 16, 110),
+              maxWidth: cols == 2 ? Ancho.menu : Ancho.lectura,
+            );
+            return ListView.builder(
+              padding: pad,
+              itemCount: rows + 2,
+              itemBuilder: (context, i) {
+                if (i == 0) return FadeSlideIn(child: _Welcome(name: first, user: user));
+                if (i == rows + 1) {
+                  // Al final del menú: reseñas escogidas por el dueño y "Sugiere un pan".
+                  return FadeSlideIn(
+                    index: i,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const FeaturedReviews(),
+                        DayRequestCard(user: user),
+                        SuggestBreadCard(user: user),
+                      ],
+                    ),
+                  );
+                }
+                if (cols == 1) {
+                  return FadeSlideIn(index: i, child: _ProductCard(product: products[i - 1], cart: cart));
+                }
+                final a = products[(i - 1) * 2];
+                final b = (i - 1) * 2 + 1 < products.length ? products[(i - 1) * 2 + 1] : null;
                 return FadeSlideIn(
                   index: i,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      const FeaturedReviews(),
-                      DayRequestCard(user: user),
-                      SuggestBreadCard(user: user),
-                    ],
+                  // Las dos tarjetas de la fila quedan del mismo alto.
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: _ProductCard(product: a, cart: cart)),
+                        const SizedBox(width: 12),
+                        Expanded(child: b == null ? const SizedBox() : _ProductCard(product: b, cart: cart)),
+                      ],
+                    ),
                   ),
                 );
-              }
-              final p = products[i - 1];
-              return FadeSlideIn(
-                index: i,
-                child: _ProductCard(product: p, cart: cart),
-              );
-            },
-          ),
+              },
+            );
+          }),
         );
       },
     );
@@ -453,8 +508,7 @@ class _PickupDays extends StatelessWidget {
             alignment: Alignment.topCenter,
             child: Column(
               children: [
-                for (final d in days.take(3))
-                  PickupDayNotice(day: d, margin: const EdgeInsets.only(top: 12)),
+                for (final d in days.take(3)) PickupDayNotice(day: d, margin: const EdgeInsets.only(top: 12)),
               ],
             ),
           );
@@ -495,7 +549,10 @@ class _NextDayStock extends StatelessWidget {
   }
 
   Widget _card(BuildContext context, DeliveryDay day, DayStock? stock, List<Product> products, int total) {
-    final groups = [for (final g in stockGroups(products)) if (day.stock.containsKey(g.key)) g];
+    final groups = [
+      for (final g in stockGroups(products))
+        if (day.stock.containsKey(g.key)) g
+    ];
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: PanCard(
@@ -607,13 +664,13 @@ class QtyStepper extends StatelessWidget {
   final VoidCallback onAdd;
   final VoidCallback onRemove;
   final double size;
-  const QtyStepper({super.key, required this.qty, required this.onAdd, required this.onRemove, this.size = 38});
+  const QtyStepper(
+      {super.key, required this.qty, required this.onAdd, required this.onRemove, this.size = 38});
 
   @override
   Widget build(BuildContext context) {
     final d = Motion.of(context, Motion.medio);
-    Widget round(IconData icon, VoidCallback onTap, {required bool filled, required String tip}) =>
-        Tooltip(
+    Widget round(IconData icon, VoidCallback onTap, {required bool filled, required String tip}) => Tooltip(
           message: tip,
           child: Pressable(
             onTap: onTap,

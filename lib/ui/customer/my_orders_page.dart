@@ -69,44 +69,50 @@ class _MyOrdersPageState extends State<MyOrdersPage> {
           builder: (context, reviewsSnap) => StreamBuilder<List<DeliveryDay>>(
             stream: _days,
             builder: (context, daysSnap) => StreamBuilder<AppConfig>(
-            stream: Repo.instance.config(),
-            builder: (context, cfg) {
-            // Días en que ya salió el reparto: ahí ya no se cambia la dirección.
-            final closed = {for (final d in daysSnap.data ?? const <DeliveryDay>[]) if (d.closed) d.date};
-            final whatsapp = cfg.data?.whatsapp ?? '';
-            final reviews = {for (final r in reviewsSnap.data ?? const <Review>[]) r.orderId: r};
-            final now = DateTime.now();
-            final children = <Widget>[
-              for (final o in upcoming)
-                _OrderCard(
-                  order: o,
-                  homeLat: homeLat,
-                  homeLng: homeLng,
-                  whatsapp: whatsapp,
-                  config: cfg.data,
-                  // Se puede cambiar a dónde llega mientras no salga el reparto de ese día.
-                  canChangeAddress: daysSnap.hasData &&
-                      !closed.contains(o.deliveryDate) &&
-                      !o.isPickup &&
-                      (o.status == OrderStatus.recibido || o.status == OrderStatus.confirmado),
-                ),
-              if (past.isNotEmpty) const SectionTitle('Pedidos anteriores'),
-              for (final o in past)
-                _OrderCard(
-                  order: o,
-                  past: true,
-                  // Mientras cargan las reseñas no se ofrece calificar (para no duplicar).
-                  canReview: reviewsSnap.hasData && canReview(o, now),
-                  review: reviews[o.id],
-                ),
-            ];
-            return ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              itemCount: children.length,
-              itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
-            );
-            },
-          ),
+              stream: Repo.instance.config(),
+              builder: (context, cfg) {
+                // Días en que ya salió el reparto: ahí ya no se cambia la dirección.
+                final closed = {
+                  for (final d in daysSnap.data ?? const <DeliveryDay>[])
+                    if (d.closed) d.date
+                };
+                final whatsapp = cfg.data?.whatsapp ?? '';
+                final reviews = {for (final r in reviewsSnap.data ?? const <Review>[]) r.orderId: r};
+                final now = DateTime.now();
+                final children = <Widget>[
+                  for (final o in upcoming)
+                    _OrderCard(
+                      order: o,
+                      homeLat: homeLat,
+                      homeLng: homeLng,
+                      whatsapp: whatsapp,
+                      config: cfg.data,
+                      // Se puede cambiar a dónde llega mientras no salga el reparto de ese día.
+                      canChangeAddress: daysSnap.hasData &&
+                          !closed.contains(o.deliveryDate) &&
+                          !o.isPickup &&
+                          (o.status == OrderStatus.recibido || o.status == OrderStatus.confirmado),
+                    ),
+                  if (past.isNotEmpty) const SectionTitle('Pedidos anteriores'),
+                  for (final o in past)
+                    _OrderCard(
+                      order: o,
+                      past: true,
+                      // Mientras cargan las reseñas no se ofrece calificar (para no duplicar).
+                      canReview: reviewsSnap.hasData && canReview(o, now),
+                      review: reviews[o.id],
+                    ),
+                ];
+                return ReadableList(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                  builder: (context, pad) => ListView.builder(
+                    padding: pad,
+                    itemCount: children.length,
+                    itemBuilder: (context, i) => FadeSlideIn(index: i, child: children[i]),
+                  ),
+                );
+              },
+            ),
           ),
         );
       },
@@ -185,7 +191,8 @@ class _OrderCard extends StatelessWidget {
         title: Text('¿Llevarlo a "${a.label}"?'),
         content: Text([
           a.address,
-          if (diff != 0) 'El envío cambia de ${money(o.shippingFee.toDouble())} a ${money(newFee.toDouble())}.',
+          if (diff != 0)
+            'El envío cambia de ${money(o.shippingFee.toDouble())} a ${money(newFee.toDouble())}.',
           if (diff > 0 && o.paymentMethod == PaymentMethod.transferencia)
             'Como ya pagaste por transferencia, la diferencia (${money(diff.toDouble())}) se paga al recibir.',
           if (diff < 0 && o.paymentMethod == PaymentMethod.transferencia)
@@ -205,7 +212,8 @@ class _OrderCard extends StatelessWidget {
     } on RejectedByServer catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('No se pudo cambiar la dirección. Intenta de nuevo. ($e)')));
+      messenger
+          .showSnackBar(SnackBar(content: Text('No se pudo cambiar la dirección. Intenta de nuevo. ($e)')));
     }
   }
 
@@ -216,8 +224,8 @@ class _OrderCard extends StatelessWidget {
     final ok = await launchUrl(whatsAppUrl(whatsapp, text), mode: LaunchMode.externalApplication)
         .catchError((_) => false);
     if (!ok && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo abrir WhatsApp. ¿Lo tienes instalado?')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('No se pudo abrir WhatsApp. ¿Lo tienes instalado?')));
     }
   }
 
@@ -408,12 +416,14 @@ class _MyReview extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text('Tu reseña ', style: theme.textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w800)),
+                    Text('Tu reseña ',
+                        style: theme.textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w800)),
                     StarsView(rating: r.rating, size: 16),
                   ],
                 ),
                 if (r.comment.isNotEmpty)
-                  Text(r.comment, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
+                  Text(r.comment,
+                      maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
               ],
             ),
           ),
