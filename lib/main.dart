@@ -18,7 +18,6 @@ import 'ui/profile_page.dart';
 import 'ui/theme.dart';
 import 'ui/update_watcher.dart';
 import 'ui/widgets.dart';
-import 'web/owner_on_android.dart';
 import 'web/platform.dart';
 import 'web/web_config.dart';
 
@@ -40,9 +39,7 @@ Future<void> main() async {
     // Si algo falla, la app sigue abriendo igual.
     try {
       await FirebaseAppCheck.instance.activate(
-        providerAndroid: kReleaseMode
-            ? const AndroidPlayIntegrityProvider()
-            : const AndroidDebugProvider(),
+        providerAndroid: kReleaseMode ? const AndroidPlayIntegrityProvider() : const AndroidDebugProvider(),
       );
     } catch (e) {
       debugPrint('App Check no se pudo activar: $e');
@@ -105,9 +102,10 @@ class PanaderosoApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: Push.messengerKey,
       theme: buildPanTheme(),
-      home: _firebaseReady
-          ? const AuthGate()
-          : (kIsWeb ? const _WebOfflinePage() : const _NotConfiguredPage()),
+      // En pantalla ancha (la compu) la app queda centrada y no se estira de lado a lado.
+      builder: (context, child) => WideFrame(child: child ?? const SizedBox()),
+      home:
+          _firebaseReady ? const AuthGate() : (kIsWeb ? const _WebOfflinePage() : const _NotConfiguredPage()),
     );
   }
 }
@@ -179,12 +177,10 @@ class _RoleHomeState extends State<_RoleHome> {
 
   @override
   Widget build(BuildContext context) {
-    // El panel del dueño (reparto con GPS, pedidos, cupos) vive en la app de Android.
-    if (kIsWeb && widget.user.role == Role.dueno) return const OwnerOnAndroidPage();
+    // El dueño también puede usar su panel en la compu (panaderoso.web.app);
+    // lo único que se queda en el celular es compartir la ubicación del reparto.
     return UpdateWatcher(
-      child: widget.user.role == Role.dueno
-          ? OwnerHome(user: widget.user)
-          : CustomerHome(user: widget.user),
+      child: widget.user.role == Role.dueno ? OwnerHome(user: widget.user) : CustomerHome(user: widget.user),
     );
   }
 }

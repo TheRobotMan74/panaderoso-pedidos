@@ -11,6 +11,7 @@ import '../../logic/route.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../format.dart';
+import '../../web/map_fallback.dart';
 import '../theme.dart';
 import '../widgets.dart';
 
@@ -113,7 +114,8 @@ class _DayRouteMapState extends State<DayRouteMap> {
         zIndexInt: done ? 1 : 2,
         infoWindow: InfoWindow(
           title: '${i + 1}. ${o.customerName}',
-          snippet: '${slotLabel(o.slot, minutes: o.slotMinutes)} · ${o.pieces} pzas${done ? ' · entregado' : ''}',
+          snippet:
+              '${slotLabel(o.slot, minutes: o.slotMinutes)} · ${o.pieces} pzas${done ? ' · entregado' : ''}',
         ),
       ));
     }
@@ -220,33 +222,36 @@ class _DayRouteMapState extends State<DayRouteMap> {
               title: 'Sin casas marcadas',
               message: 'Cuando tus clientes marquen su casa en el mapa, aparecen aquí.',
             )
-          : GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: LatLng(located.first.lat!, located.first.lng!),
-                zoom: 13,
-              ),
-              markers: _markers,
-              polylines: {
-                Polyline(
-                  polylineId: const PolylineId('ruta'),
-                  points: _line,
-                  color: Pan.caramelo.withValues(alpha: 0.75),
-                  width: 4,
-                  patterns: [PatternItem.dash(18), PatternItem.gap(10)],
+          : !mapsUsable
+              ? const MapFallback(
+                  message: 'El mapa no cargó en este navegador. La lista de paradas sigue abajo.')
+              : GoogleMap(
+                  initialCameraPosition: CameraPosition(
+                    target: LatLng(located.first.lat!, located.first.lng!),
+                    zoom: 13,
+                  ),
+                  markers: _markers,
+                  polylines: {
+                    Polyline(
+                      polylineId: const PolylineId('ruta'),
+                      points: _line,
+                      color: Pan.caramelo.withValues(alpha: 0.75),
+                      width: 4,
+                      patterns: [PatternItem.dash(18), PatternItem.gap(10)],
+                    ),
+                  },
+                  zoomControlsEnabled: false,
+                  mapToolbarEnabled: false,
+                  myLocationButtonEnabled: false,
+                  // Para mover el mapa sin que se mueva la lista.
+                  gestureRecognizers: {
+                    Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
+                  },
+                  onMapCreated: (c) {
+                    _map = c;
+                    Future.delayed(const Duration(milliseconds: 300), _fit);
+                  },
                 ),
-              },
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              myLocationButtonEnabled: false,
-              // Para mover el mapa sin que se mueva la lista.
-              gestureRecognizers: {
-                Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new),
-              },
-              onMapCreated: (c) {
-                _map = c;
-                Future.delayed(const Duration(milliseconds: 300), _fit);
-              },
-            ),
     );
     if (widget.compact) return map;
 

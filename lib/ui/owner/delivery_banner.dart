@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../logic/geo.dart';
@@ -21,8 +22,7 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
   bool _busy = false;
 
   /// Para saber si hoy es día especial (entrega en un punto) y mostrar "Ya llegué".
-  late final Stream<List<DeliveryDay>> _days =
-      Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
+  late final Stream<List<DeliveryDay>> _days = Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
 
   Future<void> _arrived(DeliveryDay day) async {
     final ok = await showDialog<bool>(
@@ -158,143 +158,172 @@ class _DeliveryBannerState extends State<DeliveryBanner> {
       builder: (context, _) => StreamBuilder<List<DeliveryDay>>(
         stream: _days,
         builder: (context, daysSnap) => StreamBuilder<TrackingInfo>(
-        stream: Repo.instance.tracking(),
-        builder: (context, snap) {
-          final info = snap.data ?? const TrackingInfo();
-          final today = (daysSnap.data ?? const <DeliveryDay>[])
-              .where((d) => d.date == (info.date.isEmpty ? dateKey(DateTime.now()) : info.date))
-              .firstOrNull;
-          final pickupDay = today != null && today.isPickup ? today : null;
-          final Widget child;
-          if (_tracker.running && pickupDay != null) {
-            child = _box(
-              key: const ValueKey('repartiendo-punto'),
-              gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
-              leading: const PulseDot(color: Colors.white, size: 12),
-              title: pickupDay.arrived ? 'En ${pickupDay.pickup!.name}' : 'Rumbo a ${pickupDay.pickup!.name}',
-              subtitle: pickupDay.arrived
-                  ? 'Ya les avisamos que llegaste'
-                  : '${info.viewers.length} clientes ven por dónde vas',
-              light: true,
-              action: IntrinsicWidth(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!pickupDay.arrived)
-                      FilledButton(
-                        style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Pan.cacao),
-                        onPressed: _busy ? null : () => _arrived(pickupDay),
-                        child: const Text('Ya llegué'),
-                      ),
-                    _GhostButton(label: 'Terminar', onPressed: _busy ? null : _stop),
-                  ],
-                ),
-              ),
-            );
-          } else if (_tracker.running) {
-            child = _box(
-              key: const ValueKey('repartiendo'),
-              gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
-              leading: const PulseDot(color: Colors.white, size: 12),
-              title: 'Repartiendo',
-              subtitle: '${info.viewers.length} clientes ven por dónde vas'
-                  '${info.updatedAt != null ? ' · ubicación ${agoLabel(info.updatedAt, DateTime.now())}' : ''}',
-              light: true,
-              action: _GhostButton(
-                label: 'Terminar',
-                onPressed: _busy ? null : _stop,
-              ),
-            );
-          } else if (info.active && !_busy) {
-            // La app se cerró a media ruta: el reparto quedó abierto.
-            // (Mientras arranca el reparto no se muestra, para no parpadear.)
-            child = _box(
-              key: const ValueKey('abierto'),
-              color: const Color(0xFFFFF1CF),
-              leading: const Icon(Icons.pause_circle_rounded, size: 34, color: Pan.caramelo),
-              title: 'El reparto quedó abierto',
-              subtitle: 'Tus clientes no ven tu ubicación ahorita.',
-              // IntrinsicWidth: dentro de un Row el ancho no tiene límite y
-              // "stretch" sin él aplastaba el texto a una letra por renglón.
-              action: IntrinsicWidth(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    FilledButton(
-                      onPressed: _busy ? null : () => _start(resume: true),
-                      child: const Text('Seguir'),
-                    ),
-                    TextButton(onPressed: _busy ? null : _stop, child: const Text('Terminar')),
-                  ],
-                ),
-              ),
-            );
-          } else {
-            child = Padding(
-              key: const ValueKey('empezar'),
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Pressable(
-                onTap: _busy ? null : _start,
-                haptic: true,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-                  decoration: BoxDecoration(
-                    gradient: Pan.gradienteCaramelo,
-                    borderRadius: BorderRadius.circular(Pan.radio),
-                    boxShadow: const [
-                      BoxShadow(color: Color(0x40A85F06), blurRadius: 16, offset: Offset(0, 8)),
-                    ],
-                  ),
-                  child: Row(
+          stream: Repo.instance.tracking(),
+          builder: (context, snap) {
+            final info = snap.data ?? const TrackingInfo();
+            final today = (daysSnap.data ?? const <DeliveryDay>[])
+                .where((d) => d.date == (info.date.isEmpty ? dateKey(DateTime.now()) : info.date))
+                .firstOrNull;
+            final pickupDay = today != null && today.isPickup ? today : null;
+            final Widget child;
+            if (kIsWeb) {
+              // En la compu no hay GPS del carro: el reparto en vivo se hace
+              // desde el celular. Aquí solo se ve cómo va.
+              child = info.active
+                  ? _box(
+                      key: const ValueKey('web-repartiendo'),
+                      gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
+                      leading: const PulseDot(color: Colors.white, size: 12),
+                      title: pickupDay != null
+                          ? (pickupDay.arrived
+                              ? 'En ${pickupDay.pickup!.name}'
+                              : 'Rumbo a ${pickupDay.pickup!.name}')
+                          : 'Repartiendo desde tu celular',
+                      subtitle: '${info.viewers.length} clientes ven por dónde vas'
+                          '${info.updatedAt != null ? ' · ubicación ${agoLabel(info.updatedAt, DateTime.now())}' : ''}',
+                      light: true,
+                      action: const Icon(Icons.phone_android_rounded, color: Colors.white),
+                    )
+                  : _box(
+                      key: const ValueKey('web-celular'),
+                      color: Pan.mielClara.withValues(alpha: 0.55),
+                      leading: const Icon(Icons.phone_android_rounded, size: 30, color: Pan.caramelo),
+                      title: 'El reparto se hace desde tu celular',
+                      subtitle: 'Para que tus clientes vean por dónde vas, toca "Empezar a repartir" '
+                          'en Panaderoso de tu Android. Aquí verás cómo va.',
+                      action: const SizedBox.shrink(),
+                    );
+            } else if (_tracker.running && pickupDay != null) {
+              child = _box(
+                key: const ValueKey('repartiendo-punto'),
+                gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
+                leading: const PulseDot(color: Colors.white, size: 12),
+                title:
+                    pickupDay.arrived ? 'En ${pickupDay.pickup!.name}' : 'Rumbo a ${pickupDay.pickup!.name}',
+                subtitle: pickupDay.arrived
+                    ? 'Ya les avisamos que llegaste'
+                    : '${info.viewers.length} clientes ven por dónde vas',
+                light: true,
+                action: IntrinsicWidth(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.18),
-                          shape: BoxShape.circle,
+                      if (!pickupDay.arrived)
+                        FilledButton(
+                          style: FilledButton.styleFrom(
+                              backgroundColor: Colors.white, foregroundColor: Pan.cacao),
+                          onPressed: _busy ? null : () => _arrived(pickupDay),
+                          child: const Text('Ya llegué'),
                         ),
-                        child: _busy
-                            ? const Padding(
-                                padding: EdgeInsets.all(13),
-                                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
-                              )
-                            : const Icon(Icons.delivery_dining_rounded, color: Colors.white, size: 28),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Empezar a repartir',
-                                style: TextStyle(
-                                    fontFamily: 'Fraunces',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 19,
-                                    color: Colors.white)),
-                            Text('Tus clientes verán por dónde vas',
-                                style: TextStyle(color: Color(0xFFFBE3BE), fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                      const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                      _GhostButton(label: 'Terminar', onPressed: _busy ? null : _stop),
                     ],
                   ),
                 ),
+              );
+            } else if (_tracker.running) {
+              child = _box(
+                key: const ValueKey('repartiendo'),
+                gradient: const LinearGradient(colors: [Color(0xFF6E9A5C), Color(0xFF4F7A40)]),
+                leading: const PulseDot(color: Colors.white, size: 12),
+                title: 'Repartiendo',
+                subtitle: '${info.viewers.length} clientes ven por dónde vas'
+                    '${info.updatedAt != null ? ' · ubicación ${agoLabel(info.updatedAt, DateTime.now())}' : ''}',
+                light: true,
+                action: _GhostButton(
+                  label: 'Terminar',
+                  onPressed: _busy ? null : _stop,
+                ),
+              );
+            } else if (info.active && !_busy) {
+              // La app se cerró a media ruta: el reparto quedó abierto.
+              // (Mientras arranca el reparto no se muestra, para no parpadear.)
+              child = _box(
+                key: const ValueKey('abierto'),
+                color: const Color(0xFFFFF1CF),
+                leading: const Icon(Icons.pause_circle_rounded, size: 34, color: Pan.caramelo),
+                title: 'El reparto quedó abierto',
+                subtitle: 'Tus clientes no ven tu ubicación ahorita.',
+                // IntrinsicWidth: dentro de un Row el ancho no tiene límite y
+                // "stretch" sin él aplastaba el texto a una letra por renglón.
+                action: IntrinsicWidth(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FilledButton(
+                        onPressed: _busy ? null : () => _start(resume: true),
+                        child: const Text('Seguir'),
+                      ),
+                      TextButton(onPressed: _busy ? null : _stop, child: const Text('Terminar')),
+                    ],
+                  ),
+                ),
+              );
+            } else {
+              child = Padding(
+                key: const ValueKey('empezar'),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Pressable(
+                  onTap: _busy ? null : _start,
+                  haptic: true,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+                    decoration: BoxDecoration(
+                      gradient: Pan.gradienteCaramelo,
+                      borderRadius: BorderRadius.circular(Pan.radio),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x40A85F06), blurRadius: 16, offset: Offset(0, 8)),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            shape: BoxShape.circle,
+                          ),
+                          child: _busy
+                              ? const Padding(
+                                  padding: EdgeInsets.all(13),
+                                  child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                                )
+                              : const Icon(Icons.delivery_dining_rounded, color: Colors.white, size: 28),
+                        ),
+                        const SizedBox(width: 14),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Empezar a repartir',
+                                  style: TextStyle(
+                                      fontFamily: 'Fraunces',
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 19,
+                                      color: Colors.white)),
+                              Text('Tus clientes verán por dónde vas',
+                                  style: TextStyle(color: Color(0xFFFBE3BE), fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }
+            return AnimatedSwitcher(
+              duration: Motion.of(context, Motion.medio),
+              transitionBuilder: (c, a) => FadeTransition(
+                opacity: a,
+                child: SizeTransition(sizeFactor: a, alignment: Alignment.topCenter, child: c),
               ),
+              child: child,
             );
-          }
-          return AnimatedSwitcher(
-            duration: Motion.of(context, Motion.medio),
-            transitionBuilder: (c, a) => FadeTransition(
-              opacity: a,
-              child: SizeTransition(sizeFactor: a, alignment: Alignment.topCenter, child: c),
-            ),
-            child: child,
-          );
-        },
+          },
         ),
       ),
     );
