@@ -19,6 +19,7 @@ import '../theme.dart';
 import '../widgets.dart';
 import 'checkout_page.dart';
 import 'day_request_sheet.dart';
+import 'flavor_picker.dart';
 import 'my_orders_page.dart';
 import 'product_detail_page.dart';
 import '../../services/push.dart';
@@ -558,6 +559,7 @@ class _ProductCard extends StatelessWidget {
                     Text(product.description,
                         maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
                   ],
+                  if (product.hasFlavors) CartFlavorLine(product: product, cart: cart),
                   const SizedBox(height: 8),
                   Row(
                     children: [
@@ -566,6 +568,8 @@ class _ProductCard extends StatelessWidget {
                       const Spacer(),
                       if (soldOut)
                         const _Tag('Agotado')
+                      else if (product.hasFlavors)
+                        FlavorCartButton(product: product, cart: cart)
                       else
                         QtyStepper(
                           qty: qty,

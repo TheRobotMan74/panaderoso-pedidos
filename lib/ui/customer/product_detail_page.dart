@@ -7,6 +7,7 @@ import '../product_image.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'customer_home.dart';
+import 'flavor_picker.dart';
 
 /// Detalle del pan: la foto "vuela" desde la lista (Hero) y se elige cuántos.
 class ProductDetailPage extends StatelessWidget {
@@ -54,7 +55,19 @@ class ProductDetailPage extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: 22),
-                        if (product.available)
+                        if (product.available && product.hasFlavors)
+                          FadeSlideIn(
+                            index: 5,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('¿De qué sabor?', style: theme.textTheme.titleMedium),
+                                const SizedBox(height: 4),
+                                FlavorRows(product: product, cart: cart, stepperSize: 44),
+                              ],
+                            ),
+                          )
+                        else if (product.available)
                           FadeSlideIn(
                             index: 5,
                             child: Row(
@@ -99,7 +112,9 @@ class ProductDetailPage extends StatelessWidget {
                 child: FadeSlideIn(
                   index: 6,
                   offset: 40,
-                  child: product.available
+                  child: product.available && product.hasFlavors && qty == 0
+                      ? const HoneyButton(label: 'Elige cuántas de cada sabor')
+                      : product.available
                       ? HoneyButton(
                           icon: qty == 0 ? Icons.add_shopping_cart_rounded : Icons.check_rounded,
                           label: qty == 0
