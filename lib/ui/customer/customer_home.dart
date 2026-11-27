@@ -18,6 +18,7 @@ import '../stock_widgets.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'checkout_page.dart';
+import 'contact_card.dart';
 import 'day_request_sheet.dart';
 import 'flavor_picker.dart';
 import 'my_orders_page.dart';
@@ -357,7 +358,8 @@ class _Catalog extends StatelessWidget {
               itemBuilder: (context, i) {
                 if (i == 0) return FadeSlideIn(child: _Welcome(name: first, user: user));
                 if (i == rows + 1) {
-                  // Al final del menú: reseñas escogidas por el dueño y "Sugiere un pan".
+                  // Al final del menú: reseñas escogidas por el dueño, "Sugiere un pan"
+                  // y el contacto (nombre y número para escribir o llamar).
                   return FadeSlideIn(
                     index: i,
                     child: Column(
@@ -366,6 +368,8 @@ class _Catalog extends StatelessWidget {
                         const FeaturedReviews(),
                         DayRequestCard(user: user),
                         SuggestBreadCard(user: user),
+                        const SectionTitle('Contacto'),
+                        const ContactCard(),
                       ],
                     ),
                   );

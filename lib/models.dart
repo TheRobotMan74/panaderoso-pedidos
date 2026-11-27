@@ -565,6 +565,10 @@ class AppConfig {
 
   /// WhatsApp de la panadería (10 dígitos). Vacío = no se muestra el botón.
   final String whatsapp;
+
+  /// Nombre que sale en "Contacto" al final del menú de los clientes.
+  /// Vacío = el de siempre (ver contact_card.dart).
+  final String contactName;
   final ShippingRules shipping;
 
   /// A cuántos metros del domicilio se le avisa al cliente que ya va a llegar.
@@ -590,6 +594,7 @@ class AppConfig {
     this.clabe = '',
     this.accountHolder = '',
     this.whatsapp = '',
+    this.contactName = '',
     this.shipping = const ShippingRules(),
     this.nearAlertMeters = 1000,
     this.baseLat,
@@ -605,6 +610,7 @@ class AppConfig {
         clabe: m?['clabe'] as String? ?? '',
         accountHolder: m?['accountHolder'] as String? ?? '',
         whatsapp: m?['whatsapp'] as String? ?? '',
+        contactName: m?['contactName'] as String? ?? '',
         shipping: ShippingRules.fromMap(
             m?['shipping'] == null ? null : Map<String, dynamic>.from(m!['shipping'] as Map)),
         nearAlertMeters: (m?['nearAlertMeters'] as num?)?.toInt() ?? 1000,
@@ -622,6 +628,7 @@ class AppConfig {
         'clabe': clabe,
         'accountHolder': accountHolder,
         'whatsapp': whatsapp,
+        'contactName': contactName,
         'shipping': shipping.toMap(),
         'nearAlertMeters': nearAlertMeters,
         'baseLat': baseLat,
