@@ -4,6 +4,7 @@ import '../../logic/promos.dart';
 import '../../logic/shipping.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../customer/contact_card.dart' show defaultContactName;
 import '../location_picker_page.dart';
 import '../theme.dart';
 import '../update_watcher.dart';
@@ -39,6 +40,7 @@ class _SettingsFormState extends State<_SettingsForm> {
   late final _clabe = TextEditingController(text: widget.initial.clabe);
   late final _holder = TextEditingController(text: widget.initial.accountHolder);
   late final _whatsapp = TextEditingController(text: widget.initial.whatsapp);
+  late final _contactName = TextEditingController(text: widget.initial.contactName);
   late final _perKm = TextEditingController(text: widget.initial.shipping.pricePerKm.toStringAsFixed(2));
   late bool _shippingEnabled = widget.initial.shipping.enabled;
   late final _nearMeters = TextEditingController(text: widget.initial.nearAlertMeters.toString());
@@ -87,6 +89,7 @@ class _SettingsFormState extends State<_SettingsForm> {
       clabe: _clabe.text.replaceAll(' ', ''),
       accountHolder: _holder.text.trim(),
       whatsapp: _whatsapp.text.replaceAll(RegExp(r'\D'), ''),
+      contactName: _contactName.text.trim(),
       shipping: ShippingRules(
         enabled: _shippingEnabled,
         pricePerKm: double.tryParse(_perKm.text.replaceAll(',', '.')) ?? old.pricePerKm,
@@ -142,13 +145,24 @@ class _SettingsFormState extends State<_SettingsForm> {
           decoration: const InputDecoration(labelText: 'CLABE'),
         ),
         const Divider(height: 40),
-        const SectionTitle('WhatsApp', padding: EdgeInsets.fromLTRB(4, 4, 4, 10)),
+        const SectionTitle('Contacto y WhatsApp', padding: EdgeInsets.fromLTRB(4, 4, 4, 10)),
+        TextField(
+          controller: _contactName,
+          textCapitalization: TextCapitalization.words,
+          decoration: const InputDecoration(
+            labelText: 'Nombre de contacto',
+            hintText: defaultContactName,
+            helperText: 'Sale al final del menú de los clientes, con el WhatsApp.',
+          ),
+        ),
+        const SizedBox(height: 12),
         TextField(
           controller: _whatsapp,
           keyboardType: TextInputType.phone,
           decoration: const InputDecoration(
             labelText: 'WhatsApp de la panadería',
-            helperText: 'Los clientes te pueden escribir desde su pedido. Vacío = sin botón.',
+            helperText: 'Los clientes te escriben desde su pedido y desde Contacto, al final del menú.',
+            helperMaxLines: 2,
           ),
         ),
         const Divider(height: 40),

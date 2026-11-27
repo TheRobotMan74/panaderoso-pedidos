@@ -20,6 +20,18 @@ String dayTitle(String dayId, Iterable<DeliveryDay> days) {
 /// "20 nov, 6:00 p. m."
 String dateTimeLabel(DateTime d) => DateFormat("d MMM, h:mm a", 'es_MX').format(d);
 
+/// Teléfono como se escribe en México: "8129332077" → "81 2933 2077",
+/// "4431234567" → "443 123 4567". Acepta +52, espacios o guiones.
+String prettyPhone(String number) {
+  var d = number.replaceAll(RegExp(r'\D'), '');
+  if (d.length == 12 && d.startsWith('52')) d = d.substring(2);
+  if (d.length != 10) return number.trim();
+  // Monterrey, CDMX y Guadalajara tienen lada de 2 dígitos; las demás, de 3.
+  return const {'81', '55', '33'}.contains(d.substring(0, 2))
+      ? '${d.substring(0, 2)} ${d.substring(2, 6)} ${d.substring(6)}'
+      : '${d.substring(0, 3)} ${d.substring(3, 6)} ${d.substring(6)}';
+}
+
 /// "lunes 23" → "Lunes 23".
 String capitalize(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
 
