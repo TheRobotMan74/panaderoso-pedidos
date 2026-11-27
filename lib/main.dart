@@ -13,6 +13,7 @@ import 'services/push.dart';
 import 'services/repo.dart';
 import 'ui/customer/customer_home.dart';
 import 'ui/login_page.dart';
+import 'ui/market/market_pos_page.dart';
 import 'ui/owner/owner_home.dart';
 import 'ui/profile_page.dart';
 import 'ui/theme.dart';
@@ -131,6 +132,9 @@ class AuthGate extends StatelessWidget {
             final needsPin = user != null && user.role == Role.cliente && !user.hasLocation;
             if (snap.connectionState == ConnectionState.waiting) {
               page = const _Loading(key: ValueKey('cargando'));
+            } else if (user != null && user.role == Role.caja) {
+              // La tablet del mercadito no necesita nombre ni dirección: abre directo la caja.
+              page = _RoleHome(key: const ValueKey('caja'), user: user);
             } else if (user == null || user.name.isEmpty || user.address.isEmpty || needsPin) {
               page = ProfilePage(key: const ValueKey('perfil'), uid: fbUser.uid, existing: user);
             } else {
@@ -171,6 +175,8 @@ class _RoleHomeState extends State<_RoleHome> {
   void _registerPush() {
     if (_registeredRole == widget.user.role) return;
     _registeredRole = widget.user.role;
+    // La tablet del mercadito no recibe avisos.
+    if (widget.user.role == Role.caja) return;
     // Si el usuario no da permiso de notificaciones, la app sigue funcionando.
     Push.register(widget.user).catchError((_) {});
   }
@@ -180,7 +186,12 @@ class _RoleHomeState extends State<_RoleHome> {
     // El dueño también puede usar su panel en la compu (panaderoso.web.app);
     // lo único que se queda en el celular es compartir la ubicación del reparto.
     return UpdateWatcher(
-      child: widget.user.role == Role.dueno ? OwnerHome(user: widget.user) : CustomerHome(user: widget.user),
+      child: switch (widget.user.role) {
+        Role.dueno => OwnerHome(user: widget.user),
+        // La tablet del puesto: solo la caja del mercadito.
+        Role.caja => const MarketPosPage(asCaja: true),
+        Role.cliente => CustomerHome(user: widget.user),
+      },
     );
   }
 }

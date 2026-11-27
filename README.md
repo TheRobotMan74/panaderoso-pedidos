@@ -103,6 +103,8 @@ Estilo cálido de panadería, con los colores del oso del ícono: miel y caramel
 | `orders/{id}` | productos, día, horario, pago, captura, estado, `lat`/`lng`, `nearNotified` | cliente crea; dueño actualiza |
 | `config/app` | datos bancarios, reglas de envío, `nearAlertMeters` | dueño |
 | `tracking/current` | reparto en vivo: ubicación del repartidor, día, `viewers` (clientes con pedido ese día) | dueño; solo lo leen los `viewers` |
+| `markets/{id}` | mercadito: fecha, lugar, abierto, panes que llevas (con sabores y precio de ese día) | dueño; la tablet (`role: caja`) solo lee |
+| `marketSales/{id}` | ventas del mercadito: panes, total, efectivo/transferencia, con cuánto pagó, cancelada | tablet o dueño crean; la tablet solo cancela |
 
 Las reglas de seguridad están en `firestore.rules` y `storage.rules`.
 
@@ -140,6 +142,24 @@ también les llegan los avisos (iPhone con iOS 16.4 o más nuevo).
 **Preparación (una sola vez, en Cloud Shell):** `bash scripts/preparar-web.sh`. Da de alta la app web,
 crea las dos llaves, deja ver las fotos y le da permiso a GitHub de publicar (sin contraseñas, solo
 desde `main`). Al final imprime las dos llaves para ponerlas en `lib/web/web_config.dart`.
+
+## Mercadito (la tablet como caja)
+
+Para vender en un puesto: el dueño abre el mercadito con cuántas piezas lleva de cada pan
+(Panel → ícono de bolsa → **Abrir mercadito**) y la tablet hace de caja.
+
+- **Tablet del puesto:** en Mercadito → Tablet del puesto se escribe el correo de otra cuenta
+  (función `asignarCaja`; si no existe, la crea con la contraseña que pongas). Esa cuenta tiene
+  `role: caja` y al entrar abre directo la caja: no ve pedidos ni clientes, no pide dirección.
+  El dueño también puede abrir la caja en su celular (**Abrir la caja aquí**).
+- **Venta:** cada toque a un pan (o a un sabor de dona) es una pieza; no deja pasar de lo que queda.
+  "Cobrar" → efectivo (con cálculo de cambio) o transferencia (muestra la CLABE de Ajustes).
+- **Sin señal:** las ventas se escriben directo en Firestore (sin funciones), así que con mala señal
+  se guardan en la tablet y se suben solas; arriba se ve "N por subir". Por eso las reglas no revisan
+  si el mercadito sigue abierto.
+- **Cuentas:** lo vendido se ve en vivo en el panel; al cerrar el mercadito pasa al Historial y se
+  suma a lo vendido del mes. No se mezcla con Pedidos, Ruta ni Demanda.
+- Código: `lib/logic/market.dart` (cuentas, lo que queda, cambio) y `lib/ui/market/`.
 
 ## Costo de envío
 

@@ -1,16 +1,18 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../models.dart';
 
 /// Acceso a los datos en Firebase. Colecciones:
 /// users, products, deliveryDays, dayStock, orders, config/app, tracking/current,
-/// reviews (una por pedido), suggestions (ideas de pan nuevo) y dayRequests
-/// (días y horas que sugieren los clientes).
+/// reviews (una por pedido), suggestions (ideas de pan nuevo), dayRequests
+/// (días y horas que sugieren los clientes), markets y marketSales (mercadito).
 class Repo {
   Repo._();
   static final instance = Repo._();
@@ -95,9 +97,10 @@ class Repo {
       .map((s) => s.docs.map((d) => d.id).toSet());
 
   /// Todas las cuentas de clientes (para la sección Clientes). Solo el dueño.
+  /// Sin la del dueño ni las de la tablet del mercadito.
   Stream<List<AppUser>> customers() => _db.collection('users').snapshots().map((s) => [
         for (final d in s.docs)
-          if (d.data()['role'] != 'dueno') AppUser.fromMap(d.id, d.data()),
+          if (!const ['dueno', 'caja'].contains(d.data()['role'])) AppUser.fromMap(d.id, d.data()),
       ]);
 
   /// Manda el correo para cambiar la contraseña. Primero intenta el correo bonito
@@ -544,6 +547,161 @@ class Repo {
     }
   }
 
+  // ---------- Mercadito ----------
+  //
+  // Todo se escribe directo en Firestore (sin funciones del servidor): si no hay
+  // señal, Firestore lo guarda en el celular o la tablet y lo sube solo después.
+  // Por eso quien llama NO debe esperar (await) estas escrituras para seguir:
+  // sin señal, el Future no termina hasta que vuelve el internet.
+
+  CollectionReference<Map<String, dynamic>> get _markets => _db.collection('markets');
+  CollectionReference<Map<String, dynamic>> get _marketSales => _db.collection('marketSales');
+
+  /// El mercadito abierto ahorita (o null). Sin señal, sale de lo guardado.
+  Stream<Market?> openMarket() => _markets.where('open', isEqualTo: true).snapshots().map((s) {
+        final list = s.docs.map((d) => Market.fromMap(d.id, d.data())).toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
+        return list.isEmpty ? null : list.first;
+      });
+
+  /// Los últimos mercaditos, el más nuevo primero.
+  Stream<List<Market>> recentMarkets({int limit = 8}) => _markets
+      .orderBy('date', descending: true)
+      .limit(limit)
+      .snapshots()
+      .map((s) => s.docs.map((d) => Market.fromMap(d.id, d.data())).toList());
+
+  /// Mercaditos de [fromDate] hasta antes de [toDate] (para el Historial).
+  Stream<List<Market>> marketsBetween(String fromDate, String toDate) => _markets
+      .where('date', isGreaterThanOrEqualTo: fromDate)
+      .where('date', isLessThan: toDate)
+      .snapshots()
+      .map((s) => s.docs.map((d) => Market.fromMap(d.id, d.data())).toList());
+
+  /// Abre un mercadito con lo que llevas. Regresa su id (ya se puede usar
+  /// aunque todavía no se suba).
+  String openNewMarket({required String date, required String place, required List<MarketItem> items}) {
+    final ref = _markets.doc();
+    _quiet(ref.set({
+      'date': date,
+      'place': place.trim(),
+      'open': true,
+      'items': [for (final i in items) i.toMap()],
+      'openedAt': FieldValue.serverTimestamp(),
+    }));
+    return ref.id;
+  }
+
+  /// Cambia lo que llevas (por ejemplo, te trajeron más panes) o el lugar.
+  Future<void> updateMarket(String id, {required List<MarketItem> items, required String place}) =>
+      _markets.doc(id).update({'items': [for (final i in items) i.toMap()], 'place': place.trim()});
+
+  /// Cierra el mercadito: la tablet deja de vender y pasa al Historial.
+  Future<void> closeMarket(String id) =>
+      _markets.doc(id).update({'open': false, 'closedAt': FieldValue.serverTimestamp()});
+
+  /// Lo vuelve a abrir (si se cerró por error).
+  Future<void> reopenMarket(String id) => _markets.doc(id).update({'open': true});
+
+  /// Borra un mercadito y sus ventas (por ejemplo, uno de prueba).
+  Future<void> deleteMarket(String id) async {
+    final sales = await _marketSales.where('marketId', isEqualTo: id).get();
+    final refs = [...sales.docs.map((d) => d.reference), _markets.doc(id)];
+    for (var i = 0; i < refs.length; i += 400) {
+      final batch = _db.batch();
+      for (final r in refs.skip(i).take(400)) {
+        batch.delete(r);
+      }
+      await batch.commit();
+    }
+  }
+
+  /// Ventas de un mercadito, en vivo, con las que todavía no se suben marcadas
+  /// como pendientes. También dice si se está trabajando sin señal.
+  Stream<({List<MarketSale> sales, bool offline})> marketSales(String marketId) => _marketSales
+      .where('marketId', isEqualTo: marketId)
+      .snapshots(includeMetadataChanges: true)
+      .map((s) => (
+            sales: [
+              for (final d in s.docs) MarketSale.fromMap(d.id, d.data(), pending: d.metadata.hasPendingWrites),
+            ]..sort((a, b) => (b.at ?? DateTime(2100)).compareTo(a.at ?? DateTime(2100))),
+            offline: s.metadata.isFromCache,
+          ));
+
+  /// Ventas de mercadito de [fromDate] hasta antes de [toDate] (Historial).
+  Stream<List<MarketSale>> marketSalesBetween(String fromDate, String toDate) => _marketSales
+      .where('date', isGreaterThanOrEqualTo: fromDate)
+      .where('date', isLessThan: toDate)
+      .snapshots()
+      .map((s) => s.docs.map((d) => MarketSale.fromMap(d.id, d.data())).toList());
+
+  /// Id para una venta nueva (se crea en la tablet, sin preguntarle al servidor).
+  String newMarketSaleId() => _marketSales.doc().id;
+
+  /// Guarda una venta. Sin señal se queda en la tablet y se sube sola después:
+  /// no hay que esperar el Future para seguir vendiendo.
+  Future<void> saveMarketSale({
+    required String id,
+    required Market market,
+    required List<OrderItem> items,
+    required double total,
+    required MarketPay pay,
+    double? received,
+  }) =>
+      _marketSales.doc(id).set({
+        'marketId': market.id,
+        'date': market.date,
+        'items': [for (final i in items) i.toMap()],
+        'pieces': items.fold<int>(0, (s, i) => s + i.qty),
+        'total': total,
+        'paymentMethod': pay.name,
+        'received': received,
+        'by': currentUid,
+        'at': Timestamp.now(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'cancelled': false,
+      });
+
+  /// Cancela una venta (se equivocaron): sus panes vuelven a estar disponibles.
+  /// Solo el dueño la puede volver a poner ([cancelled] = false).
+  Future<void> setMarketSaleCancelled(String id, bool cancelled) => _marketSales.doc(id).update({
+        'cancelled': cancelled,
+        'cancelledAt': cancelled ? FieldValue.serverTimestamp() : null,
+      });
+
+  /// Cuentas que abren directo la caja del mercadito (la tablet del puesto).
+  Stream<List<({String uid, String email, String name})>> cajaAccounts() => _db
+      .collection('users')
+      .where('role', isEqualTo: 'caja')
+      .snapshots()
+      .map((s) => [
+            for (final d in s.docs)
+              (uid: d.id, email: d.data()['email'] as String? ?? '', name: d.data()['name'] as String? ?? ''),
+          ]);
+
+  /// Hace (o deja de hacer) caja del mercadito a la cuenta con ese correo.
+  /// Si no existe y se da [password], el servidor la crea. Si no existe y no hay
+  /// contraseña, lanza [RejectedByServer] con code 'sin-cuenta'.
+  Future<void> setCajaAccount(String email, {String? password, bool remove = false}) async {
+    try {
+      await FirebaseFunctions.instance.httpsCallable('asignarCaja').call<Object?>({
+        'email': email.trim(),
+        if (password != null && password.isNotEmpty) 'password': password,
+        if (remove) 'quitar': true,
+      });
+    } on FirebaseFunctionsException catch (e) {
+      if (e.code == 'not-found') {
+        throw const RejectedByServer(
+            'Falta publicar esta opción en el servidor (el comando de Cloud Shell que viene en el PR).');
+      }
+      final noAccount = e.details is Map && (e.details as Map)['sinCuenta'] == true;
+      throw RejectedByServer(e.message ?? 'No se pudo guardar.', code: noAccount ? 'sin-cuenta' : e.code);
+    }
+  }
+
+  /// Escritura que no se espera: si falla, solo queda en el registro.
+  void _quiet(Future<void> f) => unawaited(f.catchError((Object e) => debugPrint('Firestore: $e')));
+
   // ---------- Reparto en vivo ----------
 
   DocumentReference<Map<String, dynamic>> get _tracking =>
@@ -607,7 +765,10 @@ class Repo {
 /// El servidor no aceptó la acción (por ejemplo, ya no hay cupo). [message] es para la persona.
 class RejectedByServer implements Exception {
   final String message;
-  const RejectedByServer(this.message);
+
+  /// Para distinguir algunos casos (por ejemplo 'sin-cuenta').
+  final String? code;
+  const RejectedByServer(this.message, {this.code});
 
   @override
   String toString() => message;

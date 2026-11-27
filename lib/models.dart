@@ -2,10 +2,15 @@ import 'logic/flavors.dart';
 import 'logic/promos.dart';
 import 'logic/shipping.dart';
 
-/// Rol del usuario dentro de la app.
-enum Role { cliente, dueno }
+/// Rol del usuario dentro de la app. "caja" es la cuenta de la tablet del
+/// mercadito: solo vende en el puesto (la pone el dueño, ver functions → asignarCaja).
+enum Role { cliente, dueno, caja }
 
-Role roleFromString(String? s) => s == 'dueno' ? Role.dueno : Role.cliente;
+Role roleFromString(String? s) => switch (s) {
+      'dueno' => Role.dueno,
+      'caja' => Role.caja,
+      _ => Role.cliente,
+    };
 
 class AppUser {
   final String uid;
@@ -857,4 +862,151 @@ class DayRequest {
         'seen': false,
         'notified': false,
       };
+}
+
+/// Un pan que llevas al mercadito (copia del catálogo al abrir, con su precio
+/// de ese día): así la tablet puede vender aunque se quede sin señal.
+class MarketItem {
+  final String productId;
+  final String name;
+  final double price;
+  final String? imageUrl;
+
+  /// Cuántas piezas llevas. En los panes con sabores es la suma de [flavors].
+  final int qty;
+
+  /// Cuántas de cada sabor llevas (campo "sabores"). Null = pan sin sabores.
+  final Map<String, int>? flavors;
+
+  const MarketItem({
+    required this.productId,
+    required this.name,
+    required this.price,
+    this.imageUrl,
+    required this.qty,
+    this.flavors,
+  });
+
+  bool get hasFlavors => flavors != null;
+
+  factory MarketItem.fromMap(Map<String, dynamic> m) => MarketItem(
+        productId: m['productId'] as String? ?? '',
+        name: m['name'] as String? ?? '',
+        price: (m['price'] as num?)?.toDouble() ?? 0,
+        imageUrl: m['imageUrl'] as String?,
+        qty: (m['qty'] as num?)?.toInt() ?? 0,
+        flavors: m['sabores'] is Map ? _intMap(m['sabores']) : null,
+      );
+
+  Map<String, dynamic> toMap() => {
+        'productId': productId,
+        'name': name,
+        'price': price,
+        'imageUrl': imageUrl,
+        'qty': qty,
+        if (flavors != null) 'sabores': flavors,
+      };
+}
+
+/// Un mercadito (documento markets/{id}): el dueño lo abre con lo que lleva y
+/// lo cierra al terminar. Las ventas van aparte, en marketSales.
+class Market {
+  final String id;
+
+  /// Fecha AAAA-MM-DD.
+  final String date;
+
+  /// Dónde se pone el puesto ("Mercadito Cumbres"). Puede ir vacío.
+  final String place;
+  final bool open;
+  final List<MarketItem> items;
+  final DateTime? openedAt;
+  final DateTime? closedAt;
+
+  const Market({
+    required this.id,
+    required this.date,
+    this.place = '',
+    this.open = true,
+    this.items = const [],
+    this.openedAt,
+    this.closedAt,
+  });
+
+  /// "Mercadito Cumbres", o "Mercadito" si no le pusiste lugar.
+  String get title => place.trim().isEmpty ? 'Mercadito' : place.trim();
+
+  int get pieces => items.fold(0, (s, i) => s + i.qty);
+
+  factory Market.fromMap(String id, Map<String, dynamic> m) => Market(
+        id: id,
+        date: m['date'] as String? ?? '',
+        place: m['place'] as String? ?? '',
+        open: m['open'] as bool? ?? false,
+        items: [
+          for (final e in (m['items'] as List? ?? const []))
+            if (e is Map) MarketItem.fromMap(Map<String, dynamic>.from(e)),
+        ],
+        openedAt: _toDate(m['openedAt']),
+        closedAt: _toDate(m['closedAt']),
+      );
+}
+
+enum MarketPay { efectivo, transferencia }
+
+/// Una venta del mercadito (documento marketSales/{id}). La guarda la tablet
+/// directo en Firestore, sin pasar por el servidor: si no hay señal, se queda
+/// en la tablet y se sube sola cuando vuelve.
+class MarketSale {
+  final String id;
+  final String marketId;
+  final String date;
+
+  /// Mismo formato que los pedidos: un renglón por pan, con sus sabores.
+  final List<OrderItem> items;
+  final double total;
+  final MarketPay pay;
+
+  /// Con cuánto pagó (efectivo). Null = pagó exacto o con transferencia.
+  final double? received;
+
+  /// Hora de la venta (la de la tablet: así sale bien aunque se suba después).
+  final DateTime? at;
+  final bool cancelled;
+
+  /// Todavía no llega al servidor (la tablet está sin señal).
+  final bool pending;
+
+  const MarketSale({
+    required this.id,
+    required this.marketId,
+    required this.date,
+    required this.items,
+    required this.total,
+    this.pay = MarketPay.efectivo,
+    this.received,
+    this.at,
+    this.cancelled = false,
+    this.pending = false,
+  });
+
+  int get pieces => items.fold(0, (s, i) => s + i.qty);
+
+  double? get change => received == null ? null : received! - total;
+
+  factory MarketSale.fromMap(String id, Map<String, dynamic> m, {bool pending = false}) => MarketSale(
+        id: id,
+        marketId: m['marketId'] as String? ?? '',
+        date: m['date'] as String? ?? '',
+        items: [
+          for (final e in (m['items'] as List? ?? const []))
+            if (e is Map) OrderItem.fromMap(Map<String, dynamic>.from(e)),
+        ],
+        total: (m['total'] as num?)?.toDouble() ?? 0,
+        pay: m['paymentMethod'] == 'transferencia' ? MarketPay.transferencia : MarketPay.efectivo,
+        received: (m['received'] as num?)?.toDouble(),
+        at: _toDate(m['at']) ?? _toDate(m['createdAt']),
+        cancelled: m['cancelled'] as bool? ?? false,
+        pending: pending,
+      );
 }

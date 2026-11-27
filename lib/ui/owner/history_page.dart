@@ -3,10 +3,12 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../logic/archive.dart';
 import '../../logic/flavors.dart';
+import '../../logic/market.dart';
 import '../../logic/schedule.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
 import '../format.dart';
+import '../market/market_pos_page.dart' show MarketSaleTile;
 import '../product_image.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -15,7 +17,8 @@ import 'orders_page.dart' show DeleteOrderButton;
 /// Historial: los días ya repartidos, mes por mes, con lo que se vendió.
 /// Aquí llegan solos los pedidos de días que ya pasaron, y los de hoy en cuanto
 /// se entrega todo (ver logic/archive.dart). Nada se borra: sigue contando para
-/// la tarjeta de lealtad de cada cliente.
+/// la tarjeta de lealtad de cada cliente. También van los mercaditos ya cerrados
+/// (ver logic/market.dart), sumados a lo vendido del mes.
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
 
@@ -30,17 +33,30 @@ class _HistoryPageState extends State<HistoryPage> {
   late final Stream<List<DeliveryDay>> _days = Repo.instance.deliveryDays(fromDate: dateKey(DateTime.now()));
 
   late Stream<List<BakeryOrder>> _orders = _ordersOf(_month);
+  late Stream<List<Market>> _markets = _marketsOf(_month);
+  late Stream<List<MarketSale>> _marketSales = _marketSalesOf(_month);
 
   static DateTime _firstOf(DateTime d) => DateTime(d.year, d.month);
 
+  static String _end(DateTime month) => dateKey(DateTime(month.year, month.month + 1));
+
   static Stream<List<BakeryOrder>> _ordersOf(DateTime month) =>
-      Repo.instance.ordersBetween(dateKey(month), dateKey(DateTime(month.year, month.month + 1)));
+      Repo.instance.ordersBetween(dateKey(month), _end(month));
+
+  /// Si el mercadito no carga (por ejemplo, reglas viejas), el Historial sigue igual.
+  static Stream<List<Market>> _marketsOf(DateTime month) =>
+      Repo.instance.marketsBetween(dateKey(month), _end(month)).handleError((_) {});
+
+  static Stream<List<MarketSale>> _marketSalesOf(DateTime month) =>
+      Repo.instance.marketSalesBetween(dateKey(month), _end(month)).handleError((_) {});
 
   bool get _isCurrentMonth => _month == _firstOf(DateTime.now());
 
   void _go(int delta) => setState(() {
     _month = DateTime(_month.year, _month.month + delta);
     _orders = _ordersOf(_month);
+    _markets = _marketsOf(_month);
+    _marketSales = _marketSalesOf(_month);
   });
 
   @override
@@ -60,7 +76,21 @@ class _HistoryPageState extends State<HistoryPage> {
               builder: (context, daysSnap) => StreamBuilder<List<BakeryOrder>>(
                 key: ValueKey(_month),
                 stream: _orders,
-                builder: (context, snap) => _body(context, snap, daysSnap),
+                builder: (context, snap) => StreamBuilder<List<Market>>(
+                  key: ValueKey('m$_month'),
+                  stream: _markets,
+                  builder: (context, mSnap) => StreamBuilder<List<MarketSale>>(
+                    key: ValueKey('v$_month'),
+                    stream: _marketSales,
+                    builder: (context, vSnap) => _body(
+                      context,
+                      snap,
+                      daysSnap,
+                      mSnap.data ?? const [],
+                      vSnap.data ?? const [],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -69,7 +99,13 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Widget _body(BuildContext context, AsyncSnapshot<List<BakeryOrder>> snap, AsyncSnapshot<List<DeliveryDay>> daysSnap) {
+  Widget _body(
+    BuildContext context,
+    AsyncSnapshot<List<BakeryOrder>> snap,
+    AsyncSnapshot<List<DeliveryDay>> daysSnap,
+    List<Market> markets,
+    List<MarketSale> marketSales,
+  ) {
     if (snap.hasError) {
       return EmptyState(title: 'No cargó el historial', message: '${snap.error}');
     }
@@ -83,22 +119,54 @@ class _HistoryPageState extends State<HistoryPage> {
         if (o.status != OrderStatus.cancelado && finished.contains(o.deliveryDate)) o.deliveryDate,
     };
     final orders = snap.data!.where((o) => withSales.contains(o.deliveryDate)).toList();
-    if (orders.isEmpty) {
+    // Mercaditos ya cerrados (o de días pasados), con sus ventas.
+    final doneMarkets = markets.where((m) => marketFinished(m, today: today)).toList();
+    final salesOf = <String, List<MarketSale>>{};
+    for (final v in marketSales) {
+      salesOf.putIfAbsent(v.marketId, () => []).add(v);
+    }
+    final doneSales = [for (final m in doneMarkets) ...?salesOf[m.id]];
+    if (orders.isEmpty && doneMarkets.isEmpty) {
       return EmptyState(
         title: 'Nada archivado ${_isCurrentMonth ? 'este mes' : 'en este mes'}',
-        message: 'Cuando termines de repartir un día, sus pedidos se guardan aquí con lo que vendiste.',
+        message: 'Cuando termines de repartir un día (o cierres un mercadito), aquí se guarda con lo que vendiste.',
       );
     }
-    final dates = orders.map((o) => o.deliveryDate).toSet().toList()..sort((a, b) => b.compareTo(a));
-    final children = <Widget>[
-      _SummaryCard(summary: SalesSummary.of(orders)),
+    final dates = orders.map((o) => o.deliveryDate).toSet().toList();
+    // Días distintos con algo vendido (a domicilio o en el mercadito).
+    final soldDays = {
+      for (final o in orders)
+        if (o.status == OrderStatus.entregado) dayDateOf(o.deliveryDate),
+      for (final m in doneMarkets)
+        if (MarketSummary.of(salesOf[m.id] ?? const []).sales > 0) m.date,
+    };
+    // Tarjetas del mes, la más nueva primero; el mercadito va después de los repartos de su día.
+    final cards = <(String, int, Widget)>[
       for (final d in dates)
-        _DayCard(
-          date: d,
-          orders: orders.where((o) => o.deliveryDate == d).toList(),
-          // Si ese día hubo más de un reparto, se dice cuál es cuál.
-          several: dates.where((x) => dayDateOf(x) == dayDateOf(d)).length > 1,
+        (
+          d,
+          0,
+          _DayCard(
+            date: d,
+            orders: orders.where((o) => o.deliveryDate == d).toList(),
+            // Si ese día hubo más de un reparto, se dice cuál es cuál.
+            several: dates.where((x) => dayDateOf(x) == dayDateOf(d)).length > 1,
+          ),
         ),
+      for (final m in doneMarkets) (m.date, 1, _MarketCard(market: m, sales: salesOf[m.id] ?? const [])),
+    ]..sort((a, b) {
+        final c = dayDateOf(b.$1).compareTo(dayDateOf(a.$1));
+        if (c != 0) return c;
+        final k = a.$2.compareTo(b.$2);
+        return k != 0 ? k : a.$1.compareTo(b.$1);
+      });
+    final children = <Widget>[
+      _SummaryCard(
+        summary: SalesSummary.of(orders),
+        market: MarketSummary.of(doneSales, markets: doneMarkets),
+        days: soldDays.length,
+      ),
+      for (final c in cards) c.$3,
     ];
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
@@ -127,14 +195,22 @@ class _MonthSwitcher extends StatelessWidget {
   );
 }
 
-/// Totales del mes: lo vendido, cómo se pagó y lo que falta cobrar.
+/// Totales del mes: lo vendido (a domicilio y en el mercadito), cómo se pagó
+/// y lo que falta cobrar.
 class _SummaryCard extends StatelessWidget {
   final SalesSummary summary;
-  const _SummaryCard({required this.summary});
+  final MarketSummary market;
+
+  /// Días distintos con algo vendido.
+  final int days;
+  const _SummaryCard({required this.summary, this.market = const MarketSummary(), required this.days});
 
   @override
   Widget build(BuildContext context) {
     final s = summary;
+    final mk = market;
+    final both = s.delivered > 0 && mk.sales > 0;
+    final pieces = s.pieces + mk.pieces;
     final theme = Theme.of(context);
     final small = theme.textTheme.bodySmall;
     return PanCard(
@@ -147,24 +223,35 @@ class _SummaryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Vendiste', style: small),
-          Text(money(s.sold), style: theme.textTheme.headlineMedium!.copyWith(color: Pan.caramelo)),
+          Text(money(s.sold + mk.total), style: theme.textTheme.headlineMedium!.copyWith(color: Pan.caramelo)),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              _Stat(icon: Icons.calendar_today_rounded, text: '${s.days} ${s.days == 1 ? 'día' : 'días'}'),
-              _Stat(
-                icon: Icons.check_circle_rounded,
-                text: '${s.delivered} ${s.delivered == 1 ? 'pedido' : 'pedidos'}',
-              ),
-              _Stat(icon: Icons.bakery_dining_rounded, text: '${s.pieces} ${s.pieces == 1 ? 'pieza' : 'piezas'}'),
+              _Stat(icon: Icons.calendar_today_rounded, text: '$days ${days == 1 ? 'día' : 'días'}'),
+              if (s.delivered > 0 || mk.sales == 0)
+                _Stat(
+                  icon: Icons.check_circle_rounded,
+                  text: '${s.delivered} ${s.delivered == 1 ? 'pedido' : 'pedidos'}',
+                ),
+              if (mk.sales > 0)
+                _Stat(
+                  icon: Icons.shopping_bag_rounded,
+                  text: '${mk.sales} ${mk.sales == 1 ? 'venta' : 'ventas'} en mercadito',
+                ),
+              _Stat(icon: Icons.bakery_dining_rounded, text: '$pieces ${pieces == 1 ? 'pieza' : 'piezas'}'),
               if (s.giftPieces > 0) _Stat(icon: Icons.card_giftcard_rounded, text: '${s.giftPieces} regaladas'),
             ],
           ),
           const SizedBox(height: 12),
-          _Line(icon: Icons.payments_rounded, label: 'Efectivo', value: money(s.cash)),
-          _Line(icon: Icons.account_balance_rounded, label: 'Transferencia', value: money(s.transfer)),
+          if (both) ...[
+            _Line(icon: Icons.delivery_dining_rounded, label: 'A domicilio', value: money(s.sold)),
+            _Line(icon: Icons.shopping_bag_rounded, label: 'Mercadito', value: money(mk.total)),
+            const Divider(height: 14),
+          ],
+          _Line(icon: Icons.payments_rounded, label: 'Efectivo', value: money(s.cash + mk.cash)),
+          _Line(icon: Icons.account_balance_rounded, label: 'Transferencia', value: money(s.transfer + mk.transfer)),
           if (s.shipping > 0) _Line(icon: Icons.delivery_dining_rounded, label: 'Envíos', value: money(s.shipping)),
           if (s.unpaidCount > 0)
             _Line(
@@ -179,6 +266,13 @@ class _SummaryCard extends StatelessWidget {
               label: 'Sin marcar como entregado',
               value: '${s.notDelivered}',
               color: Pan.terracota,
+            ),
+          if (mk.pending > 0)
+            _Line(
+              icon: Icons.upload_rounded,
+              label: 'Ventas del mercadito por subir',
+              value: '${mk.pending}',
+              color: Pan.caramelo,
             ),
         ],
       ),
@@ -305,6 +399,80 @@ class _DayCard extends StatelessWidget {
   }
 
   
+}
+
+/// Un mercadito ya cerrado: lo vendido de cada pan, lo que sobró y sus ventas.
+class _MarketCard extends StatelessWidget {
+  final Market market;
+  final List<MarketSale> sales;
+  const _MarketCard({required this.market, required this.sales});
+
+  Future<void> _cancel(BuildContext context, MarketSale v) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Cancelar esta venta?'),
+        content: Text('${itemsLabel(v.items)} · ${money(v.total)}\n\nYa no cuenta en lo vendido.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Sí, cancelar')),
+        ],
+      ),
+    );
+    if (ok == true) await Repo.instance.setMarketSaleCancelled(v.id, true).catchError((_) {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = MarketSummary.of(sales, markets: [market]);
+    final sold = soldByUnit(sales);
+    final sorted = [...sales]..sort((a, b) => (a.at ?? DateTime(2000)).compareTo(b.at ?? DateTime(2000)));
+    return PanCard(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(Pan.radio - 6),
+        child: ExpansionTile(
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: const Text('🧺', style: TextStyle(fontSize: 24)),
+          title: Text('${capitalize(dayLabel(market.date))} · ${market.title}', style: theme.textTheme.titleSmall),
+          subtitle: Text(
+            '${s.sales} ${s.sales == 1 ? 'venta' : 'ventas'} · ${s.pieces} de ${s.brought} piezas'
+            '${s.left > 0 ? ' · sobraron ${s.left}' : ''}',
+            style: theme.textTheme.bodySmall,
+          ),
+          trailing: Text(
+            money(s.total),
+            style: theme.textTheme.titleMedium!.copyWith(color: Pan.caramelo, fontWeight: FontWeight.w800),
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
+          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final u in marketUnits(market))
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Expanded(child: Text(u.label, style: theme.textTheme.bodyMedium)),
+                    Text('${sold[u.key] ?? 0} de ${u.brought}',
+                        style: theme.textTheme.bodyMedium!.copyWith(fontWeight: FontWeight.w800)),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 6),
+            Text(
+              'Efectivo ${money(s.cash)} · Transferencia ${money(s.transfer)}',
+              style: theme.textTheme.bodySmall!.copyWith(fontWeight: FontWeight.w700),
+            ),
+            if (sorted.isNotEmpty) const Divider(height: 18),
+            for (final v in sorted)
+              MarketSaleTile(sale: v, onCancel: v.cancelled ? null : () => _cancel(context, v)),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 String payLabel(BakeryOrder o) {

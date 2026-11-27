@@ -1178,3 +1178,61 @@ exports.borrarCuenta = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req)
   logger.info('cuenta borrada', { pedidos: pedidos.size });
   return { ok: true };
 });
+
+// ---------------------------------------------------------------------------
+// Mercadito: cuenta de la tablet del puesto (rol "caja")
+// ---------------------------------------------------------------------------
+// El dueño escribe el correo de la cuenta que va en la tablet. Esa cuenta abre
+// directo la caja del mercadito: solo vende, no ve pedidos ni clientes.
+// Si la cuenta no existe y el dueño da una contraseña, aquí se crea.
+// Con quitar: true deja de ser caja (vuelve a ser una cuenta normal de cliente).
+// Las ventas NO pasan por aquí: la tablet las guarda directo en Firestore para
+// que funcione aunque haya mala señal (ver firestore.rules → marketSales).
+exports.asignarCaja = onCall({ enforceAppCheck: EXIGIR_APP_CHECK }, async (req) => {
+  anotarPase('asignarCaja', req);
+  const yo = req.auth && req.auth.uid;
+  if (!(await esDueno(yo))) {
+    throw new HttpsError('permission-denied', 'Solo el dueño puede escoger la cuenta de la tablet.');
+  }
+  const datos = req.data || {};
+  const email = String(datos.email || '').trim().toLowerCase();
+  const password = typeof datos.password === 'string' ? datos.password : '';
+  const quitar = datos.quitar === true;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) {
+    throw new HttpsError('invalid-argument', 'Ese correo no es válido.');
+  }
+
+  let usuario;
+  try {
+    usuario = await getAuth().getUserByEmail(email);
+  } catch (e) {
+    if (e.code !== 'auth/user-not-found') throw e;
+    if (quitar) return { ok: true };
+    if (password.length < 6) {
+      throw new HttpsError('failed-precondition',
+        'No hay cuenta con ese correo. Ponle una contraseña (6 letras o números o más) para crearla.',
+        { sinCuenta: true });
+    }
+    usuario = await getAuth().createUser({ email, password, displayName: 'Mercadito' });
+    logger.info('asignarCaja: cuenta nueva creada');
+  }
+  if (usuario.uid === yo) {
+    throw new HttpsError('failed-precondition', 'Esa es tu cuenta de dueño. Usa otra para la tablet.');
+  }
+
+  const ref = getFirestore().collection('users').doc(usuario.uid);
+  const actual = await ref.get();
+  if (actual.get('role') === 'dueno') {
+    throw new HttpsError('failed-precondition', 'Esa cuenta es de dueño. Usa otra para la tablet.');
+  }
+  if (quitar) {
+    await ref.set({ role: FieldValue.delete(), email: FieldValue.delete() }, { merge: true });
+    return { ok: true };
+  }
+  await ref.set({
+    role: 'caja',
+    email,
+    name: actual.get('name') || 'Mercadito',
+  }, { merge: true });
+  return { ok: true };
+});
