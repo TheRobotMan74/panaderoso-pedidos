@@ -93,7 +93,7 @@ List<CustomerSummary> summarizeCustomers(List<AppUser> users, List<BakeryOrder> 
   final seen = <String>{};
   final list = <CustomerSummary>[];
   for (final u in users) {
-    if (u.role == Role.dueno || !seen.add(u.uid)) continue;
+    if (u.role != Role.cliente || !seen.add(u.uid)) continue;
     list.add(build(u.uid, u.name, u.phone, u.addresses, pushStateOf(u.pushOk)));
   }
   for (final e in byUid.entries) {

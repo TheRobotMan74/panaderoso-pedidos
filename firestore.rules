@@ -1,7 +1,8 @@
 rules_version = '2';
 
 // Reglas de seguridad de la base de datos.
-// Roles: "cliente" (todos al crear cuenta) y "dueno" (se pone a mano en la consola).
+// Roles: "cliente" (todos al crear cuenta), "dueno" (se pone a mano en la consola)
+// y "caja" (la tablet del mercadito; la pone el dueño con la función asignarCaja).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -12,6 +13,11 @@ service cloud.firestore {
     function isOwner() {
       return signedIn()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'dueno';
+    }
+
+    function isCaja() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'caja';
     }
 
     match /users/{uid} {
@@ -145,6 +151,51 @@ service cloud.firestore {
         || (isOwner() && resource != null
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seen', 'notified']));
       allow delete: if isOwner() || (signedIn() && resource.data.customerId == request.auth.uid);
+    }
+
+    // Mercadito: lo que llevas al puesto. Lo abre, cambia y cierra el dueño;
+    // la tablet (cuenta "caja") solo lo lee.
+    match /markets/{id} {
+      allow read: if isOwner() || isCaja();
+      allow write: if isOwner();
+    }
+
+    // Ventas del mercadito. Las hace la tablet (o el dueño) directo, sin pasar por
+    // el servidor: sin señal se guardan en la tablet y se suben solas después.
+    // Por eso no se revisa aquí si el mercadito sigue abierto (una venta hecha sin
+    // señal puede llegar cuando ya lo cerraste, y debe contar igual).
+    match /marketSales/{id} {
+      allow read: if isOwner() || isCaja();
+      allow create: if (isOwner() || isCaja())
+        && request.resource.data.keys().hasOnly(['marketId', 'date', 'items', 'pieces', 'total',
+             'paymentMethod', 'received', 'by', 'at', 'createdAt', 'cancelled'])
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.marketId is string
+        && request.resource.data.marketId.size() > 0
+        && request.resource.data.marketId.size() <= 64
+        && request.resource.data.date is string
+        && request.resource.data.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && request.resource.data.items is list
+        && request.resource.data.items.size() > 0
+        && request.resource.data.items.size() <= 40
+        && request.resource.data.pieces is int
+        && request.resource.data.pieces > 0
+        && request.resource.data.pieces <= 500
+        && request.resource.data.total is number
+        && request.resource.data.total >= 0
+        && request.resource.data.total <= 100000
+        && request.resource.data.paymentMethod in ['efectivo', 'transferencia']
+        && (request.resource.data.received == null || request.resource.data.received is number)
+        && request.resource.data.at is timestamp
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.cancelled == false;
+      // La tablet solo puede cancelar una venta (por si se equivocaron);
+      // el dueño puede cancelarla, volver a ponerla o borrarla.
+      allow update: if isOwner()
+        || (isCaja()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['cancelled', 'cancelledAt'])
+          && request.resource.data.cancelled == true);
+      allow delete: if isOwner();
     }
 
     match /orders/{id} {

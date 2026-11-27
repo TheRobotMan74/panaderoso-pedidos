@@ -3,6 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../../logic/day_requests.dart';
 import '../../models.dart';
 import '../../services/repo.dart';
+import '../market/market_banner.dart';
+import '../market/market_owner_page.dart';
 import '../theme.dart';
 import '../widgets.dart';
 import 'calendar_page.dart';
@@ -33,6 +35,10 @@ class _OwnerHomeState extends State<OwnerHome> {
       .map((l) => unseenRequests(l, DateTime.now()))
       .handleError((_) {})
       .asBroadcastStream();
+
+  /// Para el puntito verde del ícono del mercadito mientras está abierto.
+  late final _marketOpen =
+      Repo.instance.openMarket().map((m) => m != null).handleError((_) {}).asBroadcastStream();
 
   final _contentKey = GlobalKey();
 
@@ -71,7 +77,7 @@ class _OwnerHomeState extends State<OwnerHome> {
           key: ValueKey(_tab),
           child: switch (_tab) {
             0 => const Column(
-                children: [DeliveryBanner(), Expanded(child: OrdersPage())],
+                children: [MarketBanner(), DeliveryBanner(), Expanded(child: OrdersPage())],
               ),
             1 => const DemandPage(),
             2 => const CalendarPage(),
@@ -104,6 +110,20 @@ class _OwnerHomeState extends State<OwnerHome> {
           ],
         ),
         actions: [
+          StreamBuilder<bool>(
+            stream: _marketOpen,
+            builder: (context, snap) => IconButton(
+              tooltip: 'Mercadito',
+              icon: Badge(
+                isLabelVisible: snap.data ?? false,
+                smallSize: 9,
+                backgroundColor: Pan.salvia,
+                child: const Icon(Icons.shopping_bag_rounded),
+              ),
+              onPressed: () => Navigator.of(context)
+                  .push(MaterialPageRoute<void>(builder: (_) => const MarketOwnerPage())),
+            ),
+          ),
           StreamBuilder<int>(
             stream: _newFeedback,
             builder: (context, snap) {

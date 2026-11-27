@@ -613,28 +613,44 @@ class WideFrame extends StatelessWidget {
 
   static const maxWidth = 1100.0;
 
-  @override
-  Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final framed = mq.size.width > maxWidth + 40;
-    final width = framed ? maxWidth : mq.size.width;
-    return ColoredBox(
-      color: Pan.harina,
-      child: Center(
-        child: Container(
-          width: width,
-          decoration: BoxDecoration(
-            boxShadow: framed ? const [BoxShadow(color: Color(0x1A3B2A1E), blurRadius: 30)] : null,
-          ),
-          // Las pantallas de adentro "creen" que la ventana mide lo mismo que el marco.
-          child: MediaQuery(
-            data: mq.copyWith(size: Size(width, mq.size.height)),
-            child: ClipRect(child: child),
-          ),
-        ),
-      ),
-    );
+  /// Cuántas pantallas abiertas piden usar todo el ancho (la caja del mercadito
+  /// en la tablet). Mientras sea más de 0 no se pone el marco.
+  static final fullWidth = ValueNotifier<int>(0);
+
+  /// Para una pantalla que quiere todo el ancho: llamar en initState con true
+  /// y en dispose con false. El cambio se hace después del cuadro actual.
+  static void useFullWidth(bool on) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      fullWidth.value = (fullWidth.value + (on ? 1 : -1)).clamp(0, 99);
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
   }
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<int>(
+        valueListenable: fullWidth,
+        builder: (context, full, _) {
+          final mq = MediaQuery.of(context);
+          final framed = full == 0 && mq.size.width > maxWidth + 40;
+          final width = framed ? maxWidth : mq.size.width;
+          return ColoredBox(
+            color: Pan.harina,
+            child: Center(
+              child: Container(
+                width: width,
+                decoration: BoxDecoration(
+                  boxShadow: framed ? const [BoxShadow(color: Color(0x1A3B2A1E), blurRadius: 30)] : null,
+                ),
+                // Las pantallas de adentro "creen" que la ventana mide lo mismo que el marco.
+                child: MediaQuery(
+                  data: mq.copyWith(size: Size(width, mq.size.height)),
+                  child: ClipRect(child: child),
+                ),
+              ),
+            ),
+          );
+        },
+      );
 }
 
 /// Medidas para pantallas grandes: tablets, plegables abiertos y la compu.
